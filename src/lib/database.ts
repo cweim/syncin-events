@@ -1,5 +1,5 @@
 // src/lib/database.ts
-// Version: 2.1 - Added prompts validation and debugging
+// Version: 3.0 - Complete database operations for attendee experience
 
 import {
   collection,
@@ -41,15 +41,47 @@ export const postsCollection = collection(db, 'posts') as CollectionReference<Po
 export const commentsCollection = collection(db, 'comments') as CollectionReference<Comment>;
 export const reactionsCollection = collection(db, 'reactions') as CollectionReference<Reaction>;
 
-// Helper function to convert Firestore timestamps to Date objects
+// Helper function to remove undefined values from objects (Firestore doesn't accept undefined)
+const cleanUndefinedValues = (obj: Record<string, any>): Record<string, any> => {
+  const cleaned: Record<string, any> = {};
+  Object.keys(obj).forEach(key => {
+    if (obj[key] !== undefined) {
+      if (Array.isArray(obj[key])) {
+        // Handle arrays (like prompts)
+        cleaned[key] = obj[key].map((item: any) => 
+          item && typeof item === 'object' ? cleanUndefinedValues(item) : item
+        );
+      } else if (obj[key] && typeof obj[key] === 'object' && !(obj[key] instanceof Date)) {
+        cleaned[key] = cleanUndefinedValues(obj[key]);
+      } else {
+        cleaned[key] = obj[key];
+      }
+    }
+  });
+  return cleaned;
+};
+
+// ✅ ENHANCED convertTimestamps function to preserve arrays
 const convertTimestamps = <T>(data: T): T => {
   if (data && typeof data === 'object') {
+    // Handle arrays properly - don't convert them to objects
+    if (Array.isArray(data)) {
+      return data.map(item => convertTimestamps(item)) as T;
+    }
+    
     const converted = { ...data } as Record<string, unknown>;
     Object.keys(converted).forEach(key => {
       if (converted[key] instanceof Timestamp) {
         converted[key] = (converted[key] as Timestamp).toDate();
       } else if (converted[key] && typeof converted[key] === 'object') {
-        converted[key] = convertTimestamps(converted[key]);
+        // ✅ CRITICAL FIX: Check if it's an array before recursion
+        if (Array.isArray(converted[key])) {
+          // Keep arrays as arrays, just convert timestamps within them
+          converted[key] = (converted[key] as any[]).map(item => convertTimestamps(item));
+        } else {
+          // Only recurse for non-array objects
+          converted[key] = convertTimestamps(converted[key]);
+        }
       }
     });
     return converted as T;
@@ -87,9 +119,11 @@ export const createEvent = async (eventData: CreateEventData): Promise<string> =
   try {
     // Validate prompts array
     const validatedPrompts = Array.isArray(eventData.prompts) ? eventData.prompts : [];
+    console.log('📝 Input prompts:', eventData.prompts);
     console.log('📝 Validating prompts:', validatedPrompts);
+    console.log('📝 Prompts count:', validatedPrompts.length);
     
-    const docData = {
+    const docData = cleanUndefinedValues({
       ...eventData,
       prompts: validatedPrompts, // Ensure prompts is always an array
       createdAt: new Date(),
@@ -100,13 +134,13 @@ export const createEvent = async (eventData: CreateEventData): Promise<string> =
         totalLikes: 0,
         totalComments: 0,
       },
-    };
+    });
     
     console.log('Creating event document with data:', docData);
     console.log('📋 Prompts in docData:', docData.prompts);
+    console.log('📊 Cleaned prompts count:', docData.prompts?.length || 0);
     
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const eventDoc = await addDoc(eventsCollection, docData as any);
+    const eventDoc = await addDoc(eventsCollection, docData);
     
     console.log('Event document created with ID:', eventDoc.id);
     
@@ -121,6 +155,7 @@ export const createEvent = async (eventData: CreateEventData): Promise<string> =
   }
 };
 
+// ✅ ENHANCED getEvent function with array restoration
 export const getEvent = async (eventId: string): Promise<Event | null> => {
   try {
     console.log('getEvent called with eventId:', eventId);
@@ -136,18 +171,77 @@ export const getEvent = async (eventId: string): Promise<Event | null> => {
     if (eventSnap.exists()) {
       const rawData = eventSnap.data();
       console.log('📄 Raw event data from Firestore:', rawData);
-      console.log('📝 Raw prompts field:', rawData.prompts, 'Type:', typeof rawData.prompts, 'Array?:', Array.isArray(rawData.prompts));
+      console.log('📝 Raw prompts field:', rawData.prompts);
+      console.log('📝 Prompts type:', typeof rawData.prompts);
+      console.log('📝 Is prompts array?:', Array.isArray(rawData.prompts));
       
-      // Ensure prompts is always an array
+      // ✅ CRITICAL FIX: Handle prompts array conversion properly
+      let processedPrompts = rawData.prompts || [];
+      
+      // If prompts is an object with numeric keys, convert back to array
+      if (processedPrompts && !Array.isArray(processedPrompts) && typeof processedPrompts === 'object') {
+        const keys = Object.keys(processedPrompts);
+        const isNumericKeys = keys.every(key => /^\d+$/.test(key));
+        
+        if (isNumericKeys) {
+          console.log('🔧 Converting prompts object back to array');
+          processedPrompts = keys
+            .sort((a, b) => parseInt(a) - parseInt(b))
+            .map(key => (processedPrompts as Record<string, any>)[key]);
+          console.log('✅ Converted prompts array:', processedPrompts);
+        }
+      }
+      
+      // Now fix options within each prompt
+      if (Array.isArray(processedPrompts)) {
+        processedPrompts = processedPrompts.map((prompt: any) => {
+          if (prompt && prompt.type === 'multipleChoice' && prompt.options) {
+            // If options is an object with numeric keys, convert to array
+            if (!Array.isArray(prompt.options) && typeof prompt.options === 'object') {
+              const optionKeys = Object.keys(prompt.options);
+              const isNumericOptionKeys = optionKeys.every(key => /^\d+$/.test(key));
+              
+              if (isNumericOptionKeys) {
+                console.log('🔧 Converting prompt options object back to array for:', prompt.question);
+                prompt.options = optionKeys
+                  .sort((a, b) => parseInt(a) - parseInt(b))
+                  .map(key => prompt.options[key])
+                  .filter(option => option && option.trim && option.trim() !== '');
+                console.log('✅ Converted options array:', prompt.options);
+              }
+            }
+          }
+          return convertTimestamps(prompt);
+        });
+      }
+      
+      // Create the event data with proper array handling
       const eventDataWithId = { 
         ...rawData, 
         id: eventSnap.id,
-        prompts: Array.isArray(rawData.prompts) ? rawData.prompts : []
+        prompts: processedPrompts
       };
       
-      const eventData = convertTimestamps(eventDataWithId as Event);
-      console.log('✅ Processed event data:', eventData);
-      console.log('📋 Final prompts field:', eventData.prompts, 'Array?:', Array.isArray(eventData.prompts));
+      // Convert other timestamps but preserve the prompts array
+      const eventData = {
+        ...convertTimestamps(eventDataWithId),
+        prompts: processedPrompts // Keep the already processed prompts array
+      } as Event;
+      
+      console.log('✅ Final processed event data:', eventData);
+      console.log('📋 Final prompts field:', eventData.prompts);
+      console.log('📝 Is final prompts array?:', Array.isArray(eventData.prompts));
+      console.log('📊 Final prompts count:', eventData.prompts?.length || 0);
+      
+      // Log each prompt's options for debugging
+      if (Array.isArray(eventData.prompts)) {
+        eventData.prompts.forEach((prompt, index) => {
+          if (prompt.type === 'multipleChoice') {
+            console.log(`📝 Prompt ${index + 1} (${prompt.question}) options:`, prompt.options);
+            console.log(`📝 Is options array?:`, Array.isArray(prompt.options));
+          }
+        });
+      }
       
       return eventData;
     } else {
@@ -160,26 +254,114 @@ export const getEvent = async (eventId: string): Promise<Event | null> => {
   }
 };
 
+// ✅ FIXED getEventByUrl function with same array handling
+
 export const getEventByUrl = async (eventUrl: string): Promise<Event | null> => {
-  const q = query(eventsCollection, where('eventUrl', '==', eventUrl), limit(1));
-  const querySnapshot = await getDocs(q);
-  if (!querySnapshot.empty) {
-    const doc = querySnapshot.docs[0];
-    return convertTimestamps({ ...doc.data(), id: doc.id } as Event);
+  try {
+    const q = query(eventsCollection, where('eventUrl', '==', eventUrl), limit(1));
+    const querySnapshot = await getDocs(q);
+    if (!querySnapshot.empty) {
+      const doc = querySnapshot.docs[0];
+      const rawData = doc.data();
+      
+      // ✅ SAME FIX: Handle prompts array conversion properly
+      let processedPrompts = rawData.prompts || [];
+      
+      // If prompts is an object with numeric keys, convert back to array
+      if (processedPrompts && !Array.isArray(processedPrompts) && typeof processedPrompts === 'object') {
+        const keys = Object.keys(processedPrompts);
+        const isNumericKeys = keys.every(key => /^\d+$/.test(key));
+        
+        if (isNumericKeys) {
+          console.log('🔧 Converting prompts object back to array in getEventByUrl');
+          processedPrompts = keys
+            .sort((a, b) => parseInt(a) - parseInt(b))
+            .map(key => (processedPrompts as Record<string, any>)[key]);
+        }
+      }
+      
+      // Fix options within each prompt
+      if (Array.isArray(processedPrompts)) {
+        processedPrompts = processedPrompts.map((prompt: any) => {
+          if (prompt && prompt.type === 'multipleChoice' && prompt.options) {
+            // If options is an object with numeric keys, convert to array
+            if (!Array.isArray(prompt.options) && typeof prompt.options === 'object') {
+              const optionKeys = Object.keys(prompt.options);
+              const isNumericOptionKeys = optionKeys.every(key => /^\d+$/.test(key));
+              
+              if (isNumericOptionKeys) {
+                console.log('🔧 Converting prompt options in getEventByUrl for:', prompt.question);
+                prompt.options = optionKeys
+                  .sort((a, b) => parseInt(a) - parseInt(b))
+                  .map(key => prompt.options[key])
+                  .filter(option => option && option.trim && option.trim() !== '');
+              }
+            }
+          }
+          return convertTimestamps(prompt);
+        });
+      }
+      
+      // Create the event data with proper array handling (same as getEvent)
+      const eventDataWithId = { 
+        ...rawData, 
+        id: doc.id,
+        prompts: processedPrompts
+      };
+      
+      // Convert other timestamps but preserve the prompts array
+      const eventData = {
+        ...convertTimestamps(eventDataWithId),
+        prompts: processedPrompts // Keep the already processed prompts array
+      } as Event;
+      
+      return eventData;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error in getEventByUrl:', error);
+    throw error;
   }
-  return null;
 };
 
 export const getUserEvents = async (organizerId: string): Promise<Event[]> => {
-  const q = query(
-    eventsCollection,
-    where('organizerId', '==', organizerId),
-    orderBy('createdAt', 'desc')
-  );
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => 
-    convertTimestamps({ ...doc.data(), id: doc.id } as Event)
-  );
+  try {
+    // ✅ AFTER creating the Firebase index, uncomment the line below and remove the manual sorting
+    const q = query(
+      eventsCollection,
+      where('organizerId', '==', organizerId),
+      orderBy('createdAt', 'desc') // ✅ Restore this after index creation
+    );
+    
+    // ❌ BEFORE index creation, use this version:
+    // const q = query(
+    //   eventsCollection,
+    //   where('organizerId', '==', organizerId)
+    // );
+    
+    const querySnapshot = await getDocs(q);
+    
+    const events = querySnapshot.docs.map(doc => 
+      convertTimestamps({ ...doc.data(), id: doc.id } as Event)
+    );
+    
+    // ❌ Remove manual sorting after index is created
+    // events.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    console.log(`📋 Loaded ${events.length} events for organizer: ${organizerId}`);
+    return events;
+  } catch (error) {
+    console.error('Error in getUserEvents:', error);
+    
+    // If index error, provide helpful message
+    if (error instanceof Error && error.message.includes('index')) {
+      console.error('🔥 FIREBASE INDEX REQUIRED!');
+      console.error('Create index: organizerId (Ascending), createdAt (Descending)');
+      console.error('Use this link: https://console.firebase.google.com/v1/r/project/syncin-event/firestore/indexes?create_composite=...');
+    }
+    
+    throw error;
+  }
 };
 
 export const updateEvent = async (eventId: string, updates: Partial<Event>): Promise<void> => {
@@ -191,15 +373,16 @@ export const updateEvent = async (eventId: string, updates: Partial<Event>): Pro
 export const createEventParticipant = async (
   participantData: CreateParticipantData
 ): Promise<string> => {
-  const docData = {
+  const docData = cleanUndefinedValues({
     ...participantData,
     joinedAt: new Date(),
     postsCount: 0,
     likesReceived: 0,
     commentsReceived: 0,
-  };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const participantDoc = await addDoc(participantsCollection, docData as any);
+  });
+  
+  console.log('💾 Saving participant data (cleaned):', docData);
+  const participantDoc = await addDoc(participantsCollection, docData);
   return participantDoc.id;
 };
 
@@ -357,4 +540,30 @@ export const generateUniqueEventUrl = async (baseTitle: string): Promise<string>
   }
   
   return eventUrl;
+};
+
+// New functions for attendee experience
+export const getUserEventParticipations = async (userId: string): Promise<EventParticipant[]> => {
+  const q = query(
+    participantsCollection,
+    where('userId', '==', userId),
+    orderBy('joinedAt', 'desc')
+  );
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc =>
+    convertTimestamps({ ...doc.data(), id: doc.id } as EventParticipant)
+  );
+};
+
+export const getUserPostsInEvent = async (eventId: string, userId: string): Promise<Post[]> => {
+  const q = query(
+    postsCollection,
+    where('eventId', '==', eventId),
+    where('userId', '==', userId),
+    orderBy('createdAt', 'desc')
+  );
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc =>
+    convertTimestamps({ ...doc.data(), id: doc.id } as Post)
+  );
 };
