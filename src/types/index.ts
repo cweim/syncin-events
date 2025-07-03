@@ -113,6 +113,8 @@ export interface EventParticipant {
   postsCount: number;
   likesReceived: number;
   commentsReceived: number;
+  lastPostAt?: Date;            // Last time the participant posted (optional)
+  approvedPostsCount?: number;  // Number of approved posts (optional)
 }
 
 export interface ImageMetadata {

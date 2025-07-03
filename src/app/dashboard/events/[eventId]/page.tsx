@@ -1,5 +1,5 @@
 // src/app/dashboard/events/[eventId]/page.tsx
-// Version: 3.3 - Added Event Album tab for admin photo management
+// Version: 3.4 - Updated with proper download handling for CORS issues
 
 'use client';
 
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import QRCodeReact from 'react-qr-code';
 import { getEvent, getAllEventPosts } from '@/lib/database';
+import { downloadPhoto, downloadAllPhotos } from '@/lib/download-utils';
 import { Event, Post } from '@/types';
 
 interface PageProps {
@@ -135,46 +136,36 @@ export default function EventDetailsPage({ params }: PageProps) {
     console.log('Download QR code functionality would go here');
   };
 
-  const downloadPhoto = async (imageUrl: string, filename: string = 'photo.jpg') => {
+  // ✅ UPDATED: Better download function with CORS handling
+  const handleDownloadPhoto = async (imageUrl: string, filename: string) => {
     try {
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      window.URL.revokeObjectURL(url);
+      await downloadPhoto(imageUrl, filename);
     } catch (error) {
-      console.error('Error downloading photo:', error);
+      console.error('Download failed:', error);
+      // Don't show alert for CORS errors - the download utility handles this
     }
   };
 
-  const downloadAllPhotos = async () => {
+  // ✅ UPDATED: Better batch download with progress
+  const handleDownloadAll = async () => {
     if (!event) return;
     
     setDownloadingAll(true);
-    const postsToDownload = selectedPosts.size > 0 
-      ? allPosts.filter(post => selectedPosts.has(post.id))
-      : allPosts;
-
+    
     try {
-      for (let i = 0; i < postsToDownload.length; i++) {
-        const post = postsToDownload[i];
-        const filename = `${event.title}-photo-${i + 1}-${post.id}.jpg`;
-        await downloadPhoto(post.imageUrl, filename);
-        
-        // Small delay to prevent overwhelming the browser
-        if (i < postsToDownload.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
+      const result = await downloadAllPhotos(
+        allPosts, 
+        event.title, 
+        selectedPosts.size > 0 ? selectedPosts : undefined,
+        (completed, total) => {
+          console.log(`📥 Download progress: ${completed}/${total}`);
+          // Optional: Add progress indicator here in the future
         }
-      }
+      );
+      
+      console.log(`✅ Download summary: ${result.successCount} successful, ${result.failCount} failed`);
     } catch (error) {
-      console.error('Error downloading photos:', error);
+      console.error('Batch download error:', error);
     } finally {
       setDownloadingAll(false);
     }
@@ -383,7 +374,6 @@ export default function EventDetailsPage({ params }: PageProps) {
               >
                 QR Code & Sharing
               </button>
-              {/* ✅ NEW: Event Album Tab */}
               <button
                 onClick={() => setActiveTab('album')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
@@ -578,7 +568,7 @@ export default function EventDetailsPage({ params }: PageProps) {
               </div>
             )}
 
-            {/* ✅ NEW: Event Album Tab */}
+            {/* ✅ UPDATED: Event Album Tab with better download handling */}
             {activeTab === 'album' && (
               <div className="space-y-6">
                 <div className="flex items-center justify-between">
@@ -601,7 +591,7 @@ export default function EventDetailsPage({ params }: PageProps) {
                         </button>
                         
                         <button
-                          onClick={downloadAllPhotos}
+                          onClick={handleDownloadAll}
                           disabled={downloadingAll}
                           className="flex items-center text-white px-4 py-2 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
                           style={{backgroundColor: '#22C55E'}}
@@ -686,7 +676,7 @@ export default function EventDetailsPage({ params }: PageProps) {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  downloadPhoto(post.imageUrl, `${event.title}-photo-${post.id}.jpg`);
+                                  handleDownloadPhoto(post.imageUrl, `${event.title}-photo-${post.id}.jpg`);
                                 }}
                                 className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors"
                               >

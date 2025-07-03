@@ -1,5 +1,5 @@
 // src/app/event/[eventUrl]/feed/page.tsx
-// Version: 1.0 - Event feed page with onboarding flow for first-time users
+// Version: 1.1 - Updated to work with fixed post approval system
 
 'use client';
 
@@ -15,7 +15,6 @@ import {
   Download,
   Sparkles,
   Image as ImageIcon,
-  ArrowRight,
   Eye,
   EyeOff
 } from 'lucide-react';
@@ -25,6 +24,7 @@ import {
   getEventPosts,
   getEventParticipants
 } from '@/lib/database';
+import { downloadPhoto } from '@/lib/download-utils';
 import { getCurrentFirebaseUser } from '@/lib/auth';
 import { Event, EventParticipant, Post } from '@/types';
 
@@ -108,6 +108,7 @@ export default function EventFeedPage({ params }: PageProps) {
         console.log('👤 Participant data:', participantData);
         console.log('📸 Has posted:', participantData.hasPosted);
         console.log('📋 Total posts:', posts.length);
+        console.log('📋 Total participants:', participants.length);
 
       } catch (error) {
         console.error('💥 Error loading event data:', error);
@@ -120,22 +121,12 @@ export default function EventFeedPage({ params }: PageProps) {
     loadEventData();
   }, [eventUrl, currentUser, router]);
 
-  const downloadPhoto = async (imageUrl: string, filename: string = 'photo.jpg') => {
+  const handleDownloadPhoto = async (imageUrl: string, filename: string = 'photo.jpg') => {
     try {
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      
-      window.URL.revokeObjectURL(url);
+      await downloadPhoto(imageUrl, filename);
     } catch (error) {
       console.error('Error downloading photo:', error);
+      alert('Failed to download photo. Please try again.');
     }
   };
 
@@ -266,7 +257,7 @@ export default function EventFeedPage({ params }: PageProps) {
               <h2 className="text-xl font-bold" style={{color: '#111827'}}>
                 Event Photos
               </h2>
-              {!participant.hasPosted && (
+              {!participant.hasPosted && eventPosts.length > 0 && (
                 <div className="flex items-center text-sm" style={{color: '#FF9F1C'}}>
                   <ImageIcon className="h-4 w-4 mr-1" />
                   Share a photo to unlock full access
@@ -276,7 +267,7 @@ export default function EventFeedPage({ params }: PageProps) {
 
             {eventPosts.length > 0 ? (
               <div className="space-y-6">
-                {/* Show limited posts for users who haven't posted */}
+                {/* ✅ FIXED: Show all posts if user has posted, limited preview if not */}
                 {(participant.hasPosted ? eventPosts : eventPosts.slice(0, 3)).map((post) => (
                   <div key={post.id} className="bg-white rounded-xl shadow-sm overflow-hidden">
                     <img 
@@ -313,7 +304,7 @@ export default function EventFeedPage({ params }: PageProps) {
                           </span>
                         </div>
                         <button
-                          onClick={() => downloadPhoto(post.imageUrl, `${event.title}-photo-${post.id}.jpg`)}
+                          onClick={() => handleDownloadPhoto(post.imageUrl, `${event.title}-photo-${post.id}.jpg`)}
                           className="p-1 hover:bg-gray-100 rounded transition-colors"
                           style={{color: '#6B7280'}}
                         >
@@ -397,6 +388,7 @@ export default function EventFeedPage({ params }: PageProps) {
               <div className="text-xs space-y-1" style={{color: '#9CA3AF'}}>
                 <p><strong>Location:</strong> {event.location}</p>
                 <p><strong>Date:</strong> {new Date(event.startDate).toLocaleDateString()}</p>
+                <p><strong>Moderation:</strong> {event.moderationEnabled ? 'Enabled' : 'Disabled'}</p>
               </div>
             </div>
 
@@ -406,15 +398,21 @@ export default function EventFeedPage({ params }: PageProps) {
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span style={{color: '#6B7280'}}>Photos shared:</span>
-                  <span className="font-medium" style={{color: '#111827'}}>{participant.postsCount}</span>
+                  <span className="font-medium" style={{color: '#111827'}}>{participant.postsCount || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span style={{color: '#6B7280'}}>Likes received:</span>
-                  <span className="font-medium" style={{color: '#111827'}}>{participant.likesReceived}</span>
+                  <span className="font-medium" style={{color: '#111827'}}>{participant.likesReceived || 0}</span>
                 </div>
                 <div className="flex justify-between">
                   <span style={{color: '#6B7280'}}>Comments received:</span>
-                  <span className="font-medium" style={{color: '#111827'}}>{participant.commentsReceived}</span>
+                  <span className="font-medium" style={{color: '#111827'}}>{participant.commentsReceived || 0}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span style={{color: '#6B7280'}}>Has posted:</span>
+                  <span className={`font-medium ${participant.hasPosted ? 'text-green-600' : 'text-orange-600'}`}>
+                    {participant.hasPosted ? 'Yes' : 'No'}
+                  </span>
                 </div>
               </div>
             </div>

@@ -1,5 +1,5 @@
 // src/lib/database.ts
-// Version: 3.2 - Added automatic event stats updates
+// Version: 3.4 - Complete fix with proper post approval and stats updates
 
 import {
   collection,
@@ -96,7 +96,7 @@ const convertTimestamps = <T>(data: T): T => {
   return data;
 };
 
-// ✅ NEW: Function to update event stats
+// ✅ FIXED: Function to update event stats - now with better error handling
 const updateEventStats = async (eventId: string, updates: {
   participantsDelta?: number;
   postsDelta?: number;
@@ -107,24 +107,217 @@ const updateEventStats = async (eventId: string, updates: {
     const eventDoc = doc(eventsCollection, eventId);
     const updateData: any = {};
 
-    if (updates.participantsDelta) {
+    if (updates.participantsDelta !== undefined && updates.participantsDelta !== 0) {
       updateData['stats.totalParticipants'] = increment(updates.participantsDelta);
     }
-    if (updates.postsDelta) {
+    if (updates.postsDelta !== undefined && updates.postsDelta !== 0) {
       updateData['stats.totalPosts'] = increment(updates.postsDelta);
     }
-    if (updates.likesDelta) {
+    if (updates.likesDelta !== undefined && updates.likesDelta !== 0) {
       updateData['stats.totalLikes'] = increment(updates.likesDelta);
     }
-    if (updates.commentsDelta) {
+    if (updates.commentsDelta !== undefined && updates.commentsDelta !== 0) {
       updateData['stats.totalComments'] = increment(updates.commentsDelta);
     }
 
-    await updateDoc(eventDoc, updateData);
-    console.log('✅ Updated event stats:', updates);
+    if (Object.keys(updateData).length > 0) {
+      await updateDoc(eventDoc, updateData);
+      console.log('✅ Updated event stats successfully:', updates);
+    }
   } catch (error) {
     console.error('❌ Error updating event stats:', error);
     // Don't throw - stats update failure shouldn't break the main operation
+  }
+};
+
+// ✅ ENHANCED: Update participant status when they post
+export const updateParticipantPostStatus = async (
+  eventId: string, 
+  userId: string, 
+  postApproved: boolean = true
+): Promise<void> => {
+  try {
+    // Find the participant
+    const participant = await getParticipantByUser(eventId, userId);
+    if (!participant) {
+      console.error('❌ Participant not found for user:', userId);
+      return;
+    }
+
+    // Update participant's post count and hasPosted status
+    const updates: Partial<EventParticipant> = {
+      postsCount: (participant.postsCount || 0) + 1,
+      hasPosted: true,
+      lastPostAt: new Date(),
+    };
+
+    // Only count towards stats if post is approved
+    if (postApproved) {
+      updates.approvedPostsCount = (participant.approvedPostsCount || 0) + 1;
+    }
+
+    await updateParticipant(participant.id, updates);
+    console.log('✅ Updated participant post status:', updates);
+  } catch (error) {
+    console.error('❌ Error updating participant post status:', error);
+    // Don't throw - this shouldn't break the post creation flow
+  }
+};
+
+// ✅ FIXED: Post creation with proper approval status and stats
+export const createPost = async (postData: CreatePostData): Promise<string> => {
+  try {
+    // First, get the event to check moderation settings
+    const event = await getEvent(postData.eventId);
+    if (!event) {
+      throw new Error('Event not found');
+    }
+
+    // ✅ FIX: Determine approval status based on event settings
+    // If moderation is disabled OR event doesn't require approval, auto-approve
+    const shouldAutoApprove = !event.moderationEnabled || !event.requiresApproval;
+    
+    const docData = {
+      ...postData,
+      createdAt: new Date(),
+      likesCount: 0,
+      commentsCount: 0,
+      isApproved: shouldAutoApprove, // ✅ Set approval status based on event settings
+    };
+    
+    console.log('📝 Creating post with approval status:', shouldAutoApprove);
+    console.log('📝 Event moderation settings:', { 
+      moderationEnabled: event.moderationEnabled, 
+      requiresApproval: event.requiresApproval 
+    });
+    
+    const postDoc = await addDoc(postsCollection, docData as any);
+    
+    // ✅ Update participant status immediately (regardless of approval)
+    await updateParticipantPostStatus(postData.eventId, postData.userId, shouldAutoApprove);
+    
+    // ✅ FIX: Only update event stats if post is approved (or auto-approved)
+    if (shouldAutoApprove) {
+      await updateEventStats(postData.eventId, { postsDelta: 1 });
+      console.log('✅ Created approved post and updated event stats');
+    } else {
+      console.log('📝 Created post pending approval - stats not updated yet');
+    }
+    
+    return postDoc.id;
+  } catch (error) {
+    console.error('❌ Error creating post:', error);
+    throw error;
+  }
+};
+
+// ✅ NEW: Function to approve a post and update stats
+export const approvePost = async (postId: string): Promise<void> => {
+  try {
+    const postDoc = doc(postsCollection, postId);
+    const postSnap = await getDoc(postDoc);
+    
+    if (!postSnap.exists()) {
+      throw new Error('Post not found');
+    }
+    
+    const post = postSnap.data() as Post;
+    
+    if (post.isApproved) {
+      console.log('Post already approved');
+      return;
+    }
+    
+    // Update post approval status
+    await updateDoc(postDoc, { 
+      isApproved: true,
+      approvedAt: new Date()
+    });
+    
+    // Update event stats now that post is approved
+    await updateEventStats(post.eventId, { postsDelta: 1 });
+    
+    console.log('✅ Post approved and stats updated');
+  } catch (error) {
+    console.error('❌ Error approving post:', error);
+    throw error;
+  }
+};
+
+// ✅ QUICK FIX: Temporary function to fix existing participant data
+export const fixParticipantPostStatus = async (eventId: string, userId: string): Promise<void> => {
+  try {
+    console.log('🔧 Fixing participant post status for:', { eventId, userId });
+    
+    // Get participant
+    const participant = await getParticipantByUser(eventId, userId);
+    if (!participant) {
+      console.error('❌ Participant not found');
+      return;
+    }
+
+    // Get user's posts in this event
+    const userPosts = await getUserPostsInEvent(eventId, userId);
+    const approvedPosts = userPosts.filter(post => post.isApproved);
+    
+    console.log('📊 Found posts:', { total: userPosts.length, approved: approvedPosts.length });
+    
+    // Update participant status
+    const updates: Partial<EventParticipant> = {
+      postsCount: userPosts.length,
+      approvedPostsCount: approvedPosts.length,
+      hasPosted: userPosts.length > 0,
+      lastPostAt: userPosts.length > 0 ? userPosts[0].createdAt : participant.lastPostAt
+    };
+    
+    await updateParticipant(participant.id, updates);
+    console.log('✅ Fixed participant status:', updates);
+    
+  } catch (error) {
+    console.error('❌ Error fixing participant status:', error);
+    throw error;
+  }
+};
+
+// ✅ QUICK FIX: Temporary function to approve all pending posts (for testing)
+export const approveAllPendingPosts = async (eventId: string): Promise<void> => {
+  try {
+    console.log('🔧 Approving all pending posts for event:', eventId);
+    
+    // Get all posts for this event
+    const allPosts = await getAllEventPosts(eventId);
+    const pendingPosts = allPosts.filter(post => !post.isApproved);
+    
+    console.log(`📊 Found ${pendingPosts.length} pending posts out of ${allPosts.length} total`);
+    
+    for (const post of pendingPosts) {
+      await approvePost(post.id);
+      console.log(`✅ Approved post: ${post.id}`);
+    }
+    
+    console.log(`✅ Approved all ${pendingPosts.length} pending posts`);
+    
+  } catch (error) {
+    console.error('❌ Error approving pending posts:', error);
+    throw error;
+  }
+};
+
+// ✅ DEVELOPMENT HELPER: Disable moderation for an event (for testing)
+export const disableEventModeration = async (eventId: string): Promise<void> => {
+  try {
+    await updateEvent(eventId, {
+      moderationEnabled: false,
+      requiresApproval: false,
+    });
+    
+    // Also approve all existing posts
+    await approveAllPendingPosts(eventId);
+    
+    console.log('✅ Disabled moderation and approved all posts for event:', eventId);
+  } catch (error) {
+    console.error('❌ Error disabling moderation:', error);
+    throw error;
   }
 };
 
@@ -486,23 +679,6 @@ export const updateParticipant = async (
   await updateDoc(participantDoc, updates);
 };
 
-// ✅ ENHANCED: Post operations with stats updates
-export const createPost = async (postData: CreatePostData): Promise<string> => {
-  const docData = {
-    ...postData,
-    createdAt: new Date(),
-    likesCount: 0,
-    commentsCount: 0,
-  };
-  const postDoc = await addDoc(postsCollection, docData as any);
-  
-  // ✅ Update event stats - increment post count
-  await updateEventStats(postData.eventId, { postsDelta: 1 });
-  
-  console.log('✅ Created post and updated event stats');
-  return postDoc.id;
-};
-
 // ✅ NEW: Get all posts for admin (including unapproved ones)
 export const getAllEventPosts = async (eventId: string): Promise<Post[]> => {
   try {
@@ -543,6 +719,7 @@ export const getAllEventPosts = async (eventId: string): Promise<Post[]> => {
   }
 };
 
+// ✅ FIXED: Get posts for regular users (approved posts only)
 export const getEventPosts = async (eventId: string): Promise<Post[]> => {
   try {
     const q = query(
@@ -552,9 +729,12 @@ export const getEventPosts = async (eventId: string): Promise<Post[]> => {
       orderBy('createdAt', 'desc')
     );
     const querySnapshot = await getDocs(q);
-    return querySnapshot.docs.map(doc =>
+    const posts = querySnapshot.docs.map(doc =>
       convertTimestamps({ ...doc.data(), id: doc.id } as Post)
     );
+    
+    console.log(`📋 Loaded ${posts.length} approved posts for event: ${eventId}`);
+    return posts;
   } catch (error) {
     if (isIndexError(error)) {
       console.error('🔥 FIREBASE INDEX REQUIRED for getEventPosts!');
@@ -578,7 +758,7 @@ export const getEventPosts = async (eventId: string): Promise<Post[]> => {
         // Sort manually by createdAt
         posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
         
-        console.log(`📋 Loaded ${posts.length} posts (fallback) for event: ${eventId}`);
+        console.log(`📋 Loaded ${posts.length} approved posts (fallback) for event: ${eventId}`);
         return posts;
       } catch (fallbackError) {
         console.error('Fallback query also failed:', fallbackError);

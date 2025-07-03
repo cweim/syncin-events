@@ -1,5 +1,5 @@
 // src/app/event/[eventUrl]/camera/page.tsx
-// Version: 1.2 - Fixed auto-approval and ensured stats updates
+// Version: 1.3 - Fixed with proper auto-approval and participant status updates
 
 'use client';
 
@@ -130,7 +130,10 @@ export default function EventCameraPage({ params }: PageProps) {
         console.log('👤 Participant data:', participantData);
         console.log('📸 Has posted:', participantData.hasPosted);
         console.log('👁️ Show feed:', participantData.hasPosted);
-        console.log('🔧 Moderation enabled:', eventData.moderationEnabled);
+        console.log('🔧 Event settings:', { 
+          moderationEnabled: eventData.moderationEnabled,
+          requiresApproval: eventData.requiresApproval 
+        });
 
       } catch (error) {
         console.error('💥 Error loading event data:', error);
@@ -239,7 +242,10 @@ export default function EventCameraPage({ params }: PageProps) {
 
     try {
       console.log('📝 Starting post submission...');
-      console.log('🔧 Event moderation enabled:', event.moderationEnabled);
+      console.log('🔧 Event moderation settings:', { 
+        moderationEnabled: event.moderationEnabled,
+        requiresApproval: event.requiresApproval 
+      });
 
       // Upload photo
       const imageUrl = await uploadPhoto(capturedPhoto);
@@ -247,23 +253,22 @@ export default function EventCameraPage({ params }: PageProps) {
 
       // Parse tags and clean them
       const tagsArray = postTags
-        .split(' ')
+        .split(/[\s,]+/) // Split by spaces or commas
         .filter(tag => tag.startsWith('#'))
         .map(tag => tag.toLowerCase().trim())
-        .filter(tag => tag.length > 1); // Remove empty or single character tags
+        .filter(tag => tag.length > 1) // Remove empty or single character tags
+        .slice(0, 10); // Limit to 10 tags
 
-      // ✅ CRITICAL FIX: Ensure auto-approval when moderation is disabled
-      const shouldAutoApprove = !event.moderationEnabled;
-      console.log('✅ Auto-approve:', shouldAutoApprove);
+      console.log('🏷️ Processed tags:', tagsArray);
 
-      // Create post data without undefined values
+      // ✅ CRITICAL FIX: Create proper post data structure
       const postData: CreatePostData = {
         eventId: event.id,
         participantId: participant.id,
         userId: currentUser.uid,
         imageUrl,
-        isApproved: shouldAutoApprove, // ✅ Key fix: auto-approve if moderation disabled
         isReported: false,
+        isApproved: false,
       };
 
       // Only add optional fields if they have values
@@ -277,25 +282,28 @@ export default function EventCameraPage({ params }: PageProps) {
 
       console.log('📝 Creating post with data:', postData);
 
+      // ✅ Use the enhanced createPost function that handles approval automatically
       const postId = await createPost(postData);
       console.log('✅ Post created with ID:', postId);
 
-      // Update participant as having posted (unlocks feed)
-      if (!participant.hasPosted) {
-        console.log('🔓 Updating participant hasPosted status...');
-        await updateParticipant(participant.id, { 
-          hasPosted: true,
-          postsCount: participant.postsCount + 1 
-        });
-        setParticipant(prev => prev ? { ...prev, hasPosted: true, postsCount: prev.postsCount + 1 } : null);
-        setShowFeed(true);
-        console.log('✅ Participant updated - hasPosted: true');
-      } else {
-        // Still increment post count for existing posters
-        await updateParticipant(participant.id, { 
-          postsCount: participant.postsCount + 1 
-        });
-        setParticipant(prev => prev ? { ...prev, postsCount: prev.postsCount + 1 } : null);
+      // ✅ IMPORTANT: Update local participant state immediately
+      const updatedParticipant = {
+        ...participant,
+        hasPosted: true,
+        postsCount: (participant.postsCount || 0) + 1,
+        lastPostAt: new Date()
+      };
+      setParticipant(updatedParticipant);
+      setShowFeed(true);
+
+      // ✅ Refresh the event posts to show the new post (if approved)
+      try {
+        const refreshedPosts = await getEventPosts(event.id);
+        setEventPosts(refreshedPosts);
+        console.log('🔄 Refreshed posts, now showing:', refreshedPosts.length);
+      } catch (refreshError) {
+        console.log('⚠️ Could not refresh posts immediately:', refreshError);
+        // This is not critical - posts will show up on next page load
       }
 
       // Reset modal
@@ -306,37 +314,92 @@ export default function EventCameraPage({ params }: PageProps) {
 
       console.log('🎉 Post submission completed successfully!');
 
-      // Show success message and redirect
-      alert('Photo shared successfully! 🎉');
+      // Show success message
+      const approvalMessage = (!event.moderationEnabled || !event.requiresApproval) 
+        ? 'Photo shared successfully! 🎉' 
+        : 'Photo submitted for review! 📋 It will appear once approved.';
+      
+      alert(approvalMessage);
 
-      // Redirect to feed after successful post
-      router.push(`/event/${eventUrl}/feed`);
+      // Only redirect to feed if user has posted and it's not their first post
+      // For first posts, stay on camera to encourage more sharing
+      if (participant.postsCount > 0) {
+        router.push(`/event/${eventUrl}/feed`);
+      }
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to share photo';
       setError(errorMessage);
       console.error('💥 Error posting photo:', error);
+      
+      // Show user-friendly error
+      alert(`Failed to share photo: ${errorMessage}`);
     } finally {
       setIsPosting(false);
     }
   };
 
+  // ✅ IMPROVED: Download function with better error handling
   const downloadPhoto = async (imageUrl: string, filename: string = 'photo.jpg') => {
     try {
-      const response = await fetch(imageUrl);
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
+      // Method 1: Try direct download first
+      try {
+        const response = await fetch(imageUrl, {
+          method: 'GET',
+          mode: 'cors',
+          cache: 'no-cache',
+          credentials: 'omit',
+        });
+        
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = filename;
+          link.style.display = 'none';
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          window.URL.revokeObjectURL(url);
+          return;
+        }
+      } catch (corsError) {
+        console.log('🔄 Direct download failed, trying alternative...');
+      }
       
+      // Method 2: Open in new tab
       const link = document.createElement('a');
-      link.href = url;
+      link.href = imageUrl;
       link.download = filename;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(imageUrl);
+      }
+      
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       
-      window.URL.revokeObjectURL(url);
+      alert('Image opened in new tab. Right-click and "Save Image As..." to download.');
+      
     } catch (error) {
-      console.error('Error downloading photo:', error);
+      console.error('❌ Error downloading photo:', error);
+      
+      try {
+        if (navigator.clipboard) {
+          await navigator.clipboard.writeText(imageUrl);
+          alert('Unable to download directly. Image URL copied to clipboard.');
+        } else {
+          prompt('Copy this URL to view/save the image:', imageUrl);
+        }
+      } catch (clipboardError) {
+        prompt('Copy this URL to view/save the image:', imageUrl);
+      }
     }
   };
 
@@ -622,9 +685,18 @@ export default function EventCameraPage({ params }: PageProps) {
                   placeholder="#networking #fun #startup"
                 />
                 <p className="text-xs mt-1" style={{color: '#9CA3AF'}}>
-                  Add hashtags separated by spaces
+                  Add hashtags separated by spaces (max 10)
                 </p>
               </div>
+
+              {/* Approval Notice */}
+              {event.moderationEnabled && event.requiresApproval && (
+                <div className="mb-4 p-3 rounded-lg border" style={{backgroundColor: '#FFF4E6', borderColor: '#FED7AA'}}>
+                  <p className="text-sm" style={{color: '#EA580C'}}>
+                    📋 This photo will be reviewed before appearing in the feed.
+                  </p>
+                </div>
+              )}
 
               {/* Error */}
               {error && (
