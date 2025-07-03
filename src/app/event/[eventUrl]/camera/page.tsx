@@ -1,5 +1,5 @@
 // src/app/event/[eventUrl]/camera/page.tsx
-// Version: 1.0 - Camera page for photo sharing with gated feed access
+// Version: 1.2 - Fixed auto-approval and ensured stats updates
 
 'use client';
 
@@ -130,6 +130,7 @@ export default function EventCameraPage({ params }: PageProps) {
         console.log('👤 Participant data:', participantData);
         console.log('📸 Has posted:', participantData.hasPosted);
         console.log('👁️ Show feed:', participantData.hasPosted);
+        console.log('🔧 Moderation enabled:', eventData.moderationEnabled);
 
       } catch (error) {
         console.error('💥 Error loading event data:', error);
@@ -235,58 +236,86 @@ export default function EventCameraPage({ params }: PageProps) {
   
     setIsPosting(true);
     setError('');
-  
+
     try {
+      console.log('📝 Starting post submission...');
+      console.log('🔧 Event moderation enabled:', event.moderationEnabled);
+
       // Upload photo
       const imageUrl = await uploadPhoto(capturedPhoto);
-  
-      // Parse tags
-      const tags = postTags
+      console.log('📸 Photo uploaded:', imageUrl);
+
+      // Parse tags and clean them
+      const tagsArray = postTags
         .split(' ')
         .filter(tag => tag.startsWith('#'))
-        .map(tag => tag.toLowerCase());
-  
-      // Create post
+        .map(tag => tag.toLowerCase().trim())
+        .filter(tag => tag.length > 1); // Remove empty or single character tags
+
+      // ✅ CRITICAL FIX: Ensure auto-approval when moderation is disabled
+      const shouldAutoApprove = !event.moderationEnabled;
+      console.log('✅ Auto-approve:', shouldAutoApprove);
+
+      // Create post data without undefined values
       const postData: CreatePostData = {
         eventId: event.id,
         participantId: participant.id,
         userId: currentUser.uid,
         imageUrl,
-        caption: postCaption.trim() || undefined,
-        tags: tags.length > 0 ? tags : undefined,
-        isApproved: !event.moderationEnabled,
+        isApproved: shouldAutoApprove, // ✅ Key fix: auto-approve if moderation disabled
         isReported: false,
       };
-  
-      await createPost(postData);
-  
+
+      // Only add optional fields if they have values
+      if (postCaption.trim()) {
+        postData.caption = postCaption.trim();
+      }
+
+      if (tagsArray.length > 0) {
+        postData.tags = tagsArray;
+      }
+
+      console.log('📝 Creating post with data:', postData);
+
+      const postId = await createPost(postData);
+      console.log('✅ Post created with ID:', postId);
+
       // Update participant as having posted (unlocks feed)
       if (!participant.hasPosted) {
+        console.log('🔓 Updating participant hasPosted status...');
         await updateParticipant(participant.id, { 
           hasPosted: true,
           postsCount: participant.postsCount + 1 
         });
-        setParticipant(prev => prev ? { ...prev, hasPosted: true } : null);
+        setParticipant(prev => prev ? { ...prev, hasPosted: true, postsCount: prev.postsCount + 1 } : null);
         setShowFeed(true);
+        console.log('✅ Participant updated - hasPosted: true');
+      } else {
+        // Still increment post count for existing posters
+        await updateParticipant(participant.id, { 
+          postsCount: participant.postsCount + 1 
+        });
+        setParticipant(prev => prev ? { ...prev, postsCount: prev.postsCount + 1 } : null);
       }
-  
-      // Refresh posts
-      const updatedPosts = await getEventPosts(event.id);
-      setEventPosts(updatedPosts);
-  
+
       // Reset modal
       setShowPostModal(false);
       setCapturedPhoto('');
       setPostCaption('');
       setPostTags('');
-  
-      // ✅ NEW: Redirect to feed after successful post
+
+      console.log('🎉 Post submission completed successfully!');
+
+      // Show success message and redirect
+      alert('Photo shared successfully! 🎉');
+
+      // Redirect to feed after successful post
       router.push(`/event/${eventUrl}/feed`);
-  
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to share photo';
       setError(errorMessage);
-      console.error('Error posting photo:', error);
+      console.error('💥 Error posting photo:', error);
     } finally {
       setIsPosting(false);
     }

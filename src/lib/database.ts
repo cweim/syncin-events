@@ -1,5 +1,5 @@
 // src/lib/database.ts
-// Version: 3.0 - Complete database operations for attendee experience
+// Version: 3.2 - Added automatic event stats updates
 
 import {
   collection,
@@ -16,6 +16,7 @@ import {
   limit,
   Timestamp,
   CollectionReference,
+  increment,
 } from 'firebase/firestore';
 import { db } from './firebase';
 import {
@@ -41,6 +42,12 @@ export const postsCollection = collection(db, 'posts') as CollectionReference<Po
 export const commentsCollection = collection(db, 'comments') as CollectionReference<Comment>;
 export const reactionsCollection = collection(db, 'reactions') as CollectionReference<Reaction>;
 
+// Helper function to check if error is related to missing indexes
+const isIndexError = (error: any): boolean => {
+  return error?.code === 'failed-precondition' && 
+         error?.message?.includes('query requires an index');
+};
+
 // Helper function to remove undefined values from objects (Firestore doesn't accept undefined)
 const cleanUndefinedValues = (obj: Record<string, any>): Record<string, any> => {
   const cleaned: Record<string, any> = {};
@@ -61,7 +68,7 @@ const cleanUndefinedValues = (obj: Record<string, any>): Record<string, any> => 
   return cleaned;
 };
 
-// ✅ ENHANCED convertTimestamps function to preserve arrays
+// Enhanced convertTimestamps function to preserve arrays
 const convertTimestamps = <T>(data: T): T => {
   if (data && typeof data === 'object') {
     // Handle arrays properly - don't convert them to objects
@@ -74,7 +81,7 @@ const convertTimestamps = <T>(data: T): T => {
       if (converted[key] instanceof Timestamp) {
         converted[key] = (converted[key] as Timestamp).toDate();
       } else if (converted[key] && typeof converted[key] === 'object') {
-        // ✅ CRITICAL FIX: Check if it's an array before recursion
+        // Check if it's an array before recursion
         if (Array.isArray(converted[key])) {
           // Keep arrays as arrays, just convert timestamps within them
           converted[key] = (converted[key] as any[]).map(item => convertTimestamps(item));
@@ -87,6 +94,38 @@ const convertTimestamps = <T>(data: T): T => {
     return converted as T;
   }
   return data;
+};
+
+// ✅ NEW: Function to update event stats
+const updateEventStats = async (eventId: string, updates: {
+  participantsDelta?: number;
+  postsDelta?: number;
+  likesDelta?: number;
+  commentsDelta?: number;
+}): Promise<void> => {
+  try {
+    const eventDoc = doc(eventsCollection, eventId);
+    const updateData: any = {};
+
+    if (updates.participantsDelta) {
+      updateData['stats.totalParticipants'] = increment(updates.participantsDelta);
+    }
+    if (updates.postsDelta) {
+      updateData['stats.totalPosts'] = increment(updates.postsDelta);
+    }
+    if (updates.likesDelta) {
+      updateData['stats.totalLikes'] = increment(updates.likesDelta);
+    }
+    if (updates.commentsDelta) {
+      updateData['stats.totalComments'] = increment(updates.commentsDelta);
+    }
+
+    await updateDoc(eventDoc, updateData);
+    console.log('✅ Updated event stats:', updates);
+  } catch (error) {
+    console.error('❌ Error updating event stats:', error);
+    // Don't throw - stats update failure shouldn't break the main operation
+  }
 };
 
 // User operations
@@ -155,7 +194,7 @@ export const createEvent = async (eventData: CreateEventData): Promise<string> =
   }
 };
 
-// ✅ ENHANCED getEvent function with array restoration
+// Enhanced getEvent function with array restoration
 export const getEvent = async (eventId: string): Promise<Event | null> => {
   try {
     console.log('getEvent called with eventId:', eventId);
@@ -171,11 +210,8 @@ export const getEvent = async (eventId: string): Promise<Event | null> => {
     if (eventSnap.exists()) {
       const rawData = eventSnap.data();
       console.log('📄 Raw event data from Firestore:', rawData);
-      console.log('📝 Raw prompts field:', rawData.prompts);
-      console.log('📝 Prompts type:', typeof rawData.prompts);
-      console.log('📝 Is prompts array?:', Array.isArray(rawData.prompts));
       
-      // ✅ CRITICAL FIX: Handle prompts array conversion properly
+      // Handle prompts array conversion properly
       let processedPrompts = rawData.prompts || [];
       
       // If prompts is an object with numeric keys, convert back to array
@@ -229,19 +265,6 @@ export const getEvent = async (eventId: string): Promise<Event | null> => {
       } as Event;
       
       console.log('✅ Final processed event data:', eventData);
-      console.log('📋 Final prompts field:', eventData.prompts);
-      console.log('📝 Is final prompts array?:', Array.isArray(eventData.prompts));
-      console.log('📊 Final prompts count:', eventData.prompts?.length || 0);
-      
-      // Log each prompt's options for debugging
-      if (Array.isArray(eventData.prompts)) {
-        eventData.prompts.forEach((prompt, index) => {
-          if (prompt.type === 'multipleChoice') {
-            console.log(`📝 Prompt ${index + 1} (${prompt.question}) options:`, prompt.options);
-            console.log(`📝 Is options array?:`, Array.isArray(prompt.options));
-          }
-        });
-      }
       
       return eventData;
     } else {
@@ -254,8 +277,6 @@ export const getEvent = async (eventId: string): Promise<Event | null> => {
   }
 };
 
-// ✅ FIXED getEventByUrl function with same array handling
-
 export const getEventByUrl = async (eventUrl: string): Promise<Event | null> => {
   try {
     const q = query(eventsCollection, where('eventUrl', '==', eventUrl), limit(1));
@@ -264,7 +285,7 @@ export const getEventByUrl = async (eventUrl: string): Promise<Event | null> => 
       const doc = querySnapshot.docs[0];
       const rawData = doc.data();
       
-      // ✅ SAME FIX: Handle prompts array conversion properly
+      // Handle prompts array conversion properly
       let processedPrompts = rawData.prompts || [];
       
       // If prompts is an object with numeric keys, convert back to array
@@ -326,18 +347,11 @@ export const getEventByUrl = async (eventUrl: string): Promise<Event | null> => 
 
 export const getUserEvents = async (organizerId: string): Promise<Event[]> => {
   try {
-    // ✅ AFTER creating the Firebase index, uncomment the line below and remove the manual sorting
     const q = query(
       eventsCollection,
       where('organizerId', '==', organizerId),
-      orderBy('createdAt', 'desc') // ✅ Restore this after index creation
+      orderBy('createdAt', 'desc')
     );
-    
-    // ❌ BEFORE index creation, use this version:
-    // const q = query(
-    //   eventsCollection,
-    //   where('organizerId', '==', organizerId)
-    // );
     
     const querySnapshot = await getDocs(q);
     
@@ -345,21 +359,33 @@ export const getUserEvents = async (organizerId: string): Promise<Event[]> => {
       convertTimestamps({ ...doc.data(), id: doc.id } as Event)
     );
     
-    // ❌ Remove manual sorting after index is created
-    // events.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-    
     console.log(`📋 Loaded ${events.length} events for organizer: ${organizerId}`);
     return events;
   } catch (error) {
-    console.error('Error in getUserEvents:', error);
-    
-    // If index error, provide helpful message
-    if (error instanceof Error && error.message.includes('index')) {
-      console.error('🔥 FIREBASE INDEX REQUIRED!');
+    if (isIndexError(error)) {
+      console.error('🔥 FIREBASE INDEX REQUIRED for getUserEvents!');
       console.error('Create index: organizerId (Ascending), createdAt (Descending)');
-      console.error('Use this link: https://console.firebase.google.com/v1/r/project/syncin-event/firestore/indexes?create_composite=...');
+      
+      // Fallback: get events without ordering
+      try {
+        const fallbackQuery = query(eventsCollection, where('organizerId', '==', organizerId));
+        const querySnapshot = await getDocs(fallbackQuery);
+        const events = querySnapshot.docs.map(doc => 
+          convertTimestamps({ ...doc.data(), id: doc.id } as Event)
+        );
+        
+        // Sort manually
+        events.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        
+        console.log(`📋 Loaded ${events.length} events (fallback) for organizer: ${organizerId}`);
+        return events;
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+        throw error;
+      }
     }
     
+    console.error('Error in getUserEvents:', error);
     throw error;
   }
 };
@@ -369,7 +395,7 @@ export const updateEvent = async (eventId: string, updates: Partial<Event>): Pro
   await updateDoc(eventDoc, { ...updates, updatedAt: new Date() });
 };
 
-// Event Participant operations
+// ✅ ENHANCED: Event Participant operations with stats updates
 export const createEventParticipant = async (
   participantData: CreateParticipantData
 ): Promise<string> => {
@@ -383,19 +409,55 @@ export const createEventParticipant = async (
   
   console.log('💾 Saving participant data (cleaned):', docData);
   const participantDoc = await addDoc(participantsCollection, docData);
+  
+  // ✅ Update event stats - increment participant count
+  await updateEventStats(participantData.eventId, { participantsDelta: 1 });
+  
   return participantDoc.id;
 };
 
 export const getEventParticipants = async (eventId: string): Promise<EventParticipant[]> => {
-  const q = query(
-    participantsCollection,
-    where('eventId', '==', eventId),
-    orderBy('joinedAt', 'desc')
-  );
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc =>
-    convertTimestamps({ ...doc.data(), id: doc.id } as EventParticipant)
-  );
+  try {
+    const q = query(
+      participantsCollection,
+      where('eventId', '==', eventId),
+      orderBy('joinedAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc =>
+      convertTimestamps({ ...doc.data(), id: doc.id } as EventParticipant)
+    );
+  } catch (error) {
+    if (isIndexError(error)) {
+      console.error('🔥 FIREBASE INDEX REQUIRED for getEventParticipants!');
+      console.error('Create index: eventId (Ascending), joinedAt (Descending)');
+      if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string') {
+        console.error('Index URL:', (error as any).message.match(/https:\/\/[^\s]+/)?.[0]);
+      }
+      
+      // Fallback: get participants without ordering
+      try {
+        const fallbackQuery = query(participantsCollection, where('eventId', '==', eventId));
+        const querySnapshot = await getDocs(fallbackQuery);
+        const participants = querySnapshot.docs.map(doc =>
+          convertTimestamps({ ...doc.data(), id: doc.id } as EventParticipant)
+        );
+        
+        // Sort manually by joinedAt
+        participants.sort((a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime());
+        
+        console.log(`📋 Loaded ${participants.length} participants (fallback) for event: ${eventId}`);
+        return participants;
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+        // Return empty array instead of throwing to prevent app crash
+        return [];
+      }
+    }
+    
+    console.error('Error in getEventParticipants:', error);
+    throw error;
+  }
 };
 
 export const getParticipantByUser = async (
@@ -424,7 +486,7 @@ export const updateParticipant = async (
   await updateDoc(participantDoc, updates);
 };
 
-// Post operations
+// ✅ ENHANCED: Post operations with stats updates
 export const createPost = async (postData: CreatePostData): Promise<string> => {
   const docData = {
     ...postData,
@@ -432,22 +494,102 @@ export const createPost = async (postData: CreatePostData): Promise<string> => {
     likesCount: 0,
     commentsCount: 0,
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const postDoc = await addDoc(postsCollection, docData as any);
+  
+  // ✅ Update event stats - increment post count
+  await updateEventStats(postData.eventId, { postsDelta: 1 });
+  
+  console.log('✅ Created post and updated event stats');
   return postDoc.id;
 };
 
+// ✅ NEW: Get all posts for admin (including unapproved ones)
+export const getAllEventPosts = async (eventId: string): Promise<Post[]> => {
+  try {
+    const q = query(
+      postsCollection,
+      where('eventId', '==', eventId),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc =>
+      convertTimestamps({ ...doc.data(), id: doc.id } as Post)
+    );
+  } catch (error) {
+    if (isIndexError(error)) {
+      console.error('🔥 INDEX ERROR in getAllEventPosts - using fallback');
+      
+      // Fallback without ordering
+      try {
+        const fallbackQuery = query(postsCollection, where('eventId', '==', eventId));
+        const querySnapshot = await getDocs(fallbackQuery);
+        const posts = querySnapshot.docs.map(doc =>
+          convertTimestamps({ ...doc.data(), id: doc.id } as Post)
+        );
+        
+        // Sort manually by createdAt
+        posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        
+        console.log(`📋 Loaded ${posts.length} posts (fallback) for admin: ${eventId}`);
+        return posts;
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+        return [];
+      }
+    }
+    
+    console.error('Error in getAllEventPosts:', error);
+    return [];
+  }
+};
+
 export const getEventPosts = async (eventId: string): Promise<Post[]> => {
-  const q = query(
-    postsCollection,
-    where('eventId', '==', eventId),
-    where('isApproved', '==', true),
-    orderBy('createdAt', 'desc')
-  );
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc =>
-    convertTimestamps({ ...doc.data(), id: doc.id } as Post)
-  );
+  try {
+    const q = query(
+      postsCollection,
+      where('eventId', '==', eventId),
+      where('isApproved', '==', true),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc =>
+      convertTimestamps({ ...doc.data(), id: doc.id } as Post)
+    );
+  } catch (error) {
+    if (isIndexError(error)) {
+      console.error('🔥 FIREBASE INDEX REQUIRED for getEventPosts!');
+      console.error('Create index: eventId (Ascending), isApproved (Ascending), createdAt (Descending)');
+      if (typeof error === 'object' && error !== null && 'message' in error && typeof (error as any).message === 'string') {
+        console.error('Index URL:', (error as any).message.match(/https:\/\/[^\s]+/)?.[0]);
+      }
+      
+      // Fallback: get posts without complex ordering
+      try {
+        const fallbackQuery = query(
+          postsCollection,
+          where('eventId', '==', eventId),
+          where('isApproved', '==', true)
+        );
+        const querySnapshot = await getDocs(fallbackQuery);
+        const posts = querySnapshot.docs.map(doc =>
+          convertTimestamps({ ...doc.data(), id: doc.id } as Post)
+        );
+        
+        // Sort manually by createdAt
+        posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        
+        console.log(`📋 Loaded ${posts.length} posts (fallback) for event: ${eventId}`);
+        return posts;
+      } catch (fallbackError) {
+        console.error('Fallback query also failed:', fallbackError);
+        // Return empty array instead of throwing to prevent app crash
+        return [];
+      }
+    }
+    
+    console.error('Error in getEventPosts:', error);
+    throw error;
+  }
 };
 
 export const getPost = async (postId: string): Promise<Post | null> => {
@@ -470,22 +612,49 @@ export const createComment = async (commentData: CreateCommentData): Promise<str
     ...commentData,
     createdAt: new Date(),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const commentDoc = await addDoc(commentsCollection, docData as any);
+  
+  // ✅ Update event stats - increment comment count
+  await updateEventStats(commentData.eventId || '', { commentsDelta: 1 });
+  
   return commentDoc.id;
 };
 
 export const getPostComments = async (postId: string): Promise<Comment[]> => {
-  const q = query(
-    commentsCollection,
-    where('postId', '==', postId),
-    where('isApproved', '==', true),
-    orderBy('createdAt', 'asc')
-  );
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc =>
-    convertTimestamps({ ...doc.data(), id: doc.id } as Comment)
-  );
+  try {
+    const q = query(
+      commentsCollection,
+      where('postId', '==', postId),
+      where('isApproved', '==', true),
+      orderBy('createdAt', 'asc')
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc =>
+      convertTimestamps({ ...doc.data(), id: doc.id } as Comment)
+    );
+  } catch (error) {
+    if (isIndexError(error)) {
+      console.error('🔥 INDEX ERROR in getPostComments - using fallback');
+      
+      // Fallback without ordering
+      const fallbackQuery = query(
+        commentsCollection,
+        where('postId', '==', postId),
+        where('isApproved', '==', true)
+      );
+      const querySnapshot = await getDocs(fallbackQuery);
+      const comments = querySnapshot.docs.map(doc =>
+        convertTimestamps({ ...doc.data(), id: doc.id } as Comment)
+      );
+      
+      // Sort manually
+      comments.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      return comments;
+    }
+    
+    console.error('Error in getPostComments:', error);
+    return []; // Return empty array instead of throwing
+  }
 };
 
 // Reaction operations
@@ -494,8 +663,11 @@ export const createReaction = async (reactionData: CreateReactionData): Promise<
     ...reactionData,
     createdAt: new Date(),
   };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const reactionDoc = await addDoc(reactionsCollection, docData as any);
+  
+  // ✅ Update event stats - increment like count  
+  await updateEventStats(reactionData.eventId || '', { likesDelta: 1 });
+  
   return reactionDoc.id;
 };
 
@@ -520,6 +692,8 @@ export const getUserReaction = async (
 export const deleteReaction = async (reactionId: string): Promise<void> => {
   const reactionDoc = doc(reactionsCollection, reactionId);
   await deleteDoc(reactionDoc);
+  
+  // Note: You might want to decrement event stats here too
 };
 
 // Utility function to generate unique event URLs
@@ -544,26 +718,94 @@ export const generateUniqueEventUrl = async (baseTitle: string): Promise<string>
 
 // New functions for attendee experience
 export const getUserEventParticipations = async (userId: string): Promise<EventParticipant[]> => {
-  const q = query(
-    participantsCollection,
-    where('userId', '==', userId),
-    orderBy('joinedAt', 'desc')
-  );
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc =>
-    convertTimestamps({ ...doc.data(), id: doc.id } as EventParticipant)
-  );
+  try {
+    const q = query(
+      participantsCollection,
+      where('userId', '==', userId),
+      orderBy('joinedAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc =>
+      convertTimestamps({ ...doc.data(), id: doc.id } as EventParticipant)
+    );
+  } catch (error) {
+    if (isIndexError(error)) {
+      console.error('🔥 INDEX ERROR in getUserEventParticipations - using fallback');
+      
+      // Fallback without ordering
+      const fallbackQuery = query(participantsCollection, where('userId', '==', userId));
+      const querySnapshot = await getDocs(fallbackQuery);
+      const participations = querySnapshot.docs.map(doc =>
+        convertTimestamps({ ...doc.data(), id: doc.id } as EventParticipant)
+      );
+      
+      // Sort manually
+      participations.sort((a, b) => new Date(b.joinedAt).getTime() - new Date(a.joinedAt).getTime());
+      return participations;
+    }
+    
+    console.error('Error in getUserEventParticipations:', error);
+    return [];
+  }
 };
 
 export const getUserPostsInEvent = async (eventId: string, userId: string): Promise<Post[]> => {
-  const q = query(
-    postsCollection,
-    where('eventId', '==', eventId),
-    where('userId', '==', userId),
-    orderBy('createdAt', 'desc')
-  );
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc =>
-    convertTimestamps({ ...doc.data(), id: doc.id } as Post)
-  );
+  try {
+    const q = query(
+      postsCollection,
+      where('eventId', '==', eventId),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
+    return querySnapshot.docs.map(doc =>
+      convertTimestamps({ ...doc.data(), id: doc.id } as Post)
+    );
+  } catch (error) {
+    if (isIndexError(error)) {
+      console.error('🔥 INDEX ERROR in getUserPostsInEvent - using fallback');
+      
+      // Fallback without ordering
+      const fallbackQuery = query(
+        postsCollection,
+        where('eventId', '==', eventId),
+        where('userId', '==', userId)
+      );
+      const querySnapshot = await getDocs(fallbackQuery);
+      const posts = querySnapshot.docs.map(doc =>
+        convertTimestamps({ ...doc.data(), id: doc.id } as Post)
+      );
+      
+      // Sort manually
+      posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      return posts;
+    }
+    
+    console.error('Error in getUserPostsInEvent:', error);
+    return [];
+  }
 };
+
+/*
+🔥 REQUIRED FIREBASE INDEXES:
+
+1. Collection: events
+   - organizerId (Ascending), createdAt (Descending)
+
+2. Collection: eventParticipants  
+   - eventId (Ascending), joinedAt (Descending)
+   - userId (Ascending), joinedAt (Descending)
+
+3. Collection: posts
+   - eventId (Ascending), isApproved (Ascending), createdAt (Descending)
+   - eventId (Ascending), userId (Ascending), createdAt (Descending)
+   - eventId (Ascending), createdAt (Descending) ← NEW for admin album
+
+4. Collection: comments
+   - postId (Ascending), isApproved (Ascending), createdAt (Ascending)
+
+To create these indexes, visit the Firebase Console:
+https://console.firebase.google.com/project/syncin-event/firestore/indexes
+
+Or use the specific URLs provided in the error messages when they occur.
+*/

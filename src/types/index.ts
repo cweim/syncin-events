@@ -155,6 +155,7 @@ export interface Comment {
   postId: string;               // Reference to posts
   participantId: string;        // Reference to eventParticipants
   userId: string;               // Reference to users
+  eventId: string;              // Reference to events (added for stats updates)
   
   // Content
   text: string;
@@ -175,6 +176,7 @@ export interface Reaction {
   postId: string;               // Reference to posts
   participantId: string;        // Reference to eventParticipants
   userId: string;               // Reference to users
+  eventId: string;              // Reference to events (added for stats updates)
   
   type: ReactionType;
   createdAt: Date;

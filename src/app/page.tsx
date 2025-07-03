@@ -1,5 +1,5 @@
 // src/app/page.tsx
-// Version: 2.0 - Updated to new soft indigo/orange color palette
+// Version: 2.1 - Removed Join buttons for better Admin UX
 
 import Link from 'next/link';
 import { Camera, Users, QrCode, Sparkles } from 'lucide-react';
@@ -23,12 +23,6 @@ export default function HomePage() {
               >
                 Organizer Dashboard
               </Link>
-              <button 
-                className="px-4 py-2 hover:text-gray-900 transition-colors"
-                style={{color: '#6B7280'}}
-              >
-                Join Event
-              </button>
             </div>
           </div>
         </div>
@@ -47,7 +41,7 @@ export default function HomePage() {
               create lasting memories, and generate amazing content for your next event.
             </p>
             
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <div className="flex justify-center">
               <Link
                 href="/dashboard"
                 className="px-8 py-4 rounded-lg text-lg font-semibold transition-colors inline-flex items-center justify-center text-white hover:opacity-90"
@@ -56,17 +50,6 @@ export default function HomePage() {
                 <Users className="mr-2 h-5 w-5" />
                 Create Your Event
               </Link>
-              <button 
-                className="border-2 px-8 py-4 rounded-lg text-lg font-semibold transition-colors inline-flex items-center justify-center hover:bg-opacity-10"
-                style={{
-                  borderColor: '#6C63FF',
-                  color: '#6C63FF',
-                  backgroundColor: 'transparent'
-                }}
-              >
-                <QrCode className="mr-2 h-5 w-5" />
-                Join with QR Code
-              </button>
             </div>
           </div>
         </div>

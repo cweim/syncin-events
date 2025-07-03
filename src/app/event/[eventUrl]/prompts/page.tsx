@@ -1,5 +1,5 @@
 // src/app/event/[eventUrl]/prompts/page.tsx
-// Version: 1.3 - Complete fix with multiple choice options, array handling, and feed redirect
+// Version: 1.4 - Removed debug sections and added multiple choice selection support
 
 'use client';
 
@@ -20,7 +20,7 @@ export default function EventPromptsPage({ params }: PageProps) {
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [eventUrl, setEventUrl] = useState<string>('');
-  const [responses, setResponses] = useState<Record<string, string>>({});
+  const [responses, setResponses] = useState<Record<string, string | string[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -77,7 +77,7 @@ export default function EventPromptsPage({ params }: PageProps) {
         setEvent(eventData);
         
         // Initialize responses object with proper prompts validation
-        const initialResponses: Record<string, string> = {};
+        const initialResponses: Record<string, string | string[]> = {};
         
         // Ensure prompts is an array before processing
         const prompts = Array.isArray(eventData.prompts) ? eventData.prompts : [];
@@ -85,7 +85,8 @@ export default function EventPromptsPage({ params }: PageProps) {
         
         prompts.forEach(prompt => {
           if (prompt && prompt.id) {
-            initialResponses[prompt.id] = '';
+            // Initialize as empty array for multiple choice, empty string for text
+            initialResponses[prompt.id] = prompt.type === 'multipleChoice' ? [] : '';
           }
         });
         
@@ -102,9 +103,28 @@ export default function EventPromptsPage({ params }: PageProps) {
     loadEvent();
   }, [eventUrl, currentUser, router]);
 
-  const handleResponseChange = (promptId: string, value: string) => {
+  const handleResponseChange = (promptId: string, value: string | string[], isMultipleChoice: boolean = false) => {
     setResponses(prev => ({ ...prev, [promptId]: value }));
     setError(''); // Clear error when user types
+  };
+
+  const handleMultipleChoiceChange = (promptId: string, option: string, checked: boolean) => {
+    setResponses(prev => {
+      const currentResponses = Array.isArray(prev[promptId]) ? prev[promptId] as string[] : [];
+      
+      if (checked) {
+        // Add option if not already present
+        if (!currentResponses.includes(option)) {
+          return { ...prev, [promptId]: [...currentResponses, option] };
+        }
+      } else {
+        // Remove option
+        return { ...prev, [promptId]: currentResponses.filter(item => item !== option) };
+      }
+      
+      return prev;
+    });
+    setError(''); // Clear error when user makes changes
   };
 
   const getOptionsArray = (options: any): string[] => {
@@ -138,9 +158,22 @@ export default function EventPromptsPage({ params }: PageProps) {
     const prompts = Array.isArray(event.prompts) ? event.prompts : [];
     
     for (const prompt of prompts) {
-      if (prompt && prompt.required && (!responses[prompt.id] || responses[prompt.id].trim() === '')) {
-        setError(`Please answer: ${prompt.question}`);
-        return false;
+      if (prompt && prompt.required) {
+        const response = responses[prompt.id];
+        
+        if (prompt.type === 'multipleChoice') {
+          // For multiple choice, check if at least one option is selected
+          if (!Array.isArray(response) || response.length === 0) {
+            setError(`Please select at least one option for: ${prompt.question}`);
+            return false;
+          }
+        } else {
+          // For text, check if response is not empty
+          if (!response || (typeof response === 'string' && response.trim() === '')) {
+            setError(`Please answer: ${prompt.question}`);
+            return false;
+          }
+        }
       }
     }
     return true;
@@ -154,15 +187,28 @@ export default function EventPromptsPage({ params }: PageProps) {
     setError('');
 
     try {
+      // Convert responses to the format expected by the database
+      const processedResponses: Record<string, string> = {};
+      
+      Object.entries(responses).forEach(([promptId, response]) => {
+        if (Array.isArray(response)) {
+          // For multiple choice, join selected options with commas
+          processedResponses[promptId] = response.join(', ');
+        } else {
+          // For text responses, use as is
+          processedResponses[promptId] = response;
+        }
+      });
+
       // Create event participant
       const participantData: CreateParticipantData = {
         eventId: event.id,
         userId: currentUser.uid,
         displayName: currentUser.displayName || 'Anonymous User',
-        ...(currentUser.photoURL ? { profilePhotoUrl: currentUser.photoURL } : {}), // Only include if not undefined
-        promptResponses: responses,
+        ...(currentUser.photoURL ? { profilePhotoUrl: currentUser.photoURL } : {}),
+        promptResponses: processedResponses,
         hasPosted: false,
-        isApproved: !event.requiresApproval, // Auto-approve if not required
+        isApproved: !event.requiresApproval,
         isModerator: false,
       };
 
@@ -173,7 +219,7 @@ export default function EventPromptsPage({ params }: PageProps) {
       // Add event to user's history
       await addEventToUserHistory(currentUser.uid, event.id);
 
-      // ✅ FIXED: Redirect to feed page instead of camera
+      // Redirect to feed page
       router.push(`/event/${eventUrl}/feed`);
       
     } catch (error) {
@@ -217,7 +263,15 @@ export default function EventPromptsPage({ params }: PageProps) {
   }
 
   const requiredPromptsCount = Array.isArray(event.prompts) ? event.prompts.filter(p => p && p.required).length : 0;
-  const answeredRequiredCount = Array.isArray(event.prompts) ? event.prompts.filter(p => p && p.required && responses[p.id]?.trim()).length : 0;
+  const answeredRequiredCount = Array.isArray(event.prompts) ? event.prompts.filter(p => {
+    if (!p || !p.required) return false;
+    const response = responses[p.id];
+    if (p.type === 'multipleChoice') {
+      return Array.isArray(response) && response.length > 0;
+    } else {
+      return response && typeof response === 'string' && response.trim() !== '';
+    }
+  }).length : 0;
 
   return (
     <div className="min-h-screen flex flex-col" style={{backgroundColor: '#F9FAFB'}}>
@@ -277,8 +331,7 @@ export default function EventPromptsPage({ params }: PageProps) {
               </div>
             )}
 
-            {/* Questions Form - FIXED VERSION */}
-            {/* Questions Form - COMPLETELY FIXED VERSION */}
+            {/* Questions Form */}
             <form onSubmit={handleSubmit} className="space-y-6">
               {Array.isArray(event.prompts) && event.prompts.length > 0 ? (
                 event.prompts.map((prompt, index) => (
@@ -294,7 +347,7 @@ export default function EventPromptsPage({ params }: PageProps) {
                           }`} style={{
                             backgroundColor: prompt.type === 'text' ? '#DBEAFE' : '#22C55E'
                           }}>
-                            {prompt.type === 'text' ? 'Text' : 'Choice'}
+                            {prompt.type === 'text' ? 'Text' : 'Multiple Choice'}
                           </span>
                           {prompt.required && (
                             <span className="px-2 py-1 text-xs rounded-full text-white font-medium" style={{backgroundColor: '#EF4444'}}>
@@ -306,7 +359,7 @@ export default function EventPromptsPage({ params }: PageProps) {
 
                       {prompt.type === 'text' ? (
                         <textarea
-                          value={responses[prompt.id] || ''}
+                          value={(responses[prompt.id] as string) || ''}
                           onChange={(e) => handleResponseChange(prompt.id, e.target.value)}
                           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
                           style={{color: '#111827'}}
@@ -316,31 +369,21 @@ export default function EventPromptsPage({ params }: PageProps) {
                         />
                       ) : (
                         <div className="space-y-3">
-                          {/* ✅ COMPLETELY FIXED: Multiple choice options with debugging */}
-                          
-                          {/* Debug info - remove after fixing */}
-                          <div className="mb-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-                            <strong>Debug Options:</strong><br/>
-                            Options property exists: {'options' in prompt ? 'YES' : 'NO'}<br/>
-                            Options value: {JSON.stringify(prompt.options)}<br/>
-                            Is Array: {Array.isArray(prompt.options) ? 'YES' : 'NO'}<br/>
-                            Length: {prompt.options?.length || 0}<br/>
-                            All prompt keys: {Object.keys(prompt).join(', ')}
-                          </div>
+                          <p className="text-sm" style={{color: '#6B7280'}}>
+                            Select one or more options:
+                          </p>
                           
                           {(() => {
-                            // ✅ FIXED: Only try to access the correct 'options' property
-                            const options = prompt.options || [];
                             const optionsArray = getOptionsArray(prompt.options);
+                            const selectedOptions = Array.isArray(responses[prompt.id]) ? responses[prompt.id] as string[] : [];
+                            
                             if (optionsArray.length > 0) {
                               return optionsArray.map((option, optionIndex) => (
                                 <label key={optionIndex} className="flex items-center cursor-pointer">
                                   <input
-                                    type="radio"
-                                    name={prompt.id}
-                                    value={option}
-                                    checked={responses[prompt.id] === option}
-                                    onChange={(e) => handleResponseChange(prompt.id, e.target.value)}
+                                    type="checkbox"
+                                    checked={selectedOptions.includes(option)}
+                                    onChange={(e) => handleMultipleChoiceChange(prompt.id, option, e.target.checked)}
                                     className="mr-3"
                                     style={{accentColor: '#6C63FF'}}
                                   />
@@ -353,35 +396,50 @@ export default function EventPromptsPage({ params }: PageProps) {
                                   <p className="text-sm" style={{color: '#EA580C'}}>
                                     ⚠️ No options available for this question.
                                   </p>
-                                  <details className="mt-2">
-                                    <summary className="text-xs cursor-pointer" style={{color: '#9CA3AF'}}>
-                                      Show debug info
-                                    </summary>
-                                    <pre className="text-xs mt-1 p-2 bg-gray-100 rounded">
-                                      {JSON.stringify(prompt, null, 2)}
-                                    </pre>
-                                  </details>
                                 </div>
                               );
                             }
+                          })()}
+                          
+                          {/* Show selected options count */}
+                          {(() => {
+                            const selectedOptions = Array.isArray(responses[prompt.id]) ? responses[prompt.id] as string[] : [];
+                            if (selectedOptions.length > 0) {
+                              return (
+                                <div className="mt-2 text-sm" style={{color: '#6B7280'}}>
+                                  {selectedOptions.length} option{selectedOptions.length !== 1 ? 's' : ''} selected
+                                </div>
+                              );
+                            }
+                            return null;
                           })()}
                         </div>
                       )}
 
                       {/* Character count for text inputs */}
-                      {prompt.type === 'text' && responses[prompt.id] && (
+                      {prompt.type === 'text' && responses[prompt.id] && typeof responses[prompt.id] === 'string' && (
                         <div className="mt-2 text-xs text-right" style={{color: '#9CA3AF'}}>
-                          {responses[prompt.id].length}/500
+                          {(responses[prompt.id] as string).length}/500
                         </div>
                       )}
 
                       {/* Completion indicator */}
-                      {responses[prompt.id]?.trim() && (
-                        <div className="mt-3 flex items-center text-sm" style={{color: '#22C55E'}}>
-                          <Check className="h-4 w-4 mr-1" />
-                          <span>Complete</span>
-                        </div>
-                      )}
+                      {(() => {
+                        const response = responses[prompt.id];
+                        const isCompleted = prompt.type === 'multipleChoice' 
+                          ? Array.isArray(response) && response.length > 0
+                          : response && typeof response === 'string' && response.trim() !== '';
+                        
+                        if (isCompleted) {
+                          return (
+                            <div className="mt-3 flex items-center text-sm" style={{color: '#22C55E'}}>
+                              <Check className="h-4 w-4 mr-1" />
+                              <span>Complete</span>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   ) : null
                 ))

@@ -1,5 +1,5 @@
 // src/app/my-events/page.tsx
-// Version: 1.1 - Fix missing getEvent import
+// Version: 1.2 - Fixed getEvent import and removed placeholder
 
 'use client';
 
@@ -21,7 +21,7 @@ import {
 import { getCurrentFirebaseUser, signOutUser, getUserEventHistory } from '@/lib/auth';
 import { 
   getUser, 
-  getEvent, // ✅ Add this import
+  getEvent,
   getEventParticipants, 
   getEventPosts 
 } from '@/lib/database';
@@ -112,14 +112,6 @@ export default function MyEventsPage() {
 
     loadUserData();
   }, [currentUser]);
-
-  // TODO: Implement getEvent function in database.ts if not already present
-  const getEvent = async (eventId: string): Promise<Event | null> => {
-    // This should be implemented in database.ts
-    // For now, using a placeholder
-    console.warn('getEvent function needs to be implemented');
-    return null;
-  };
 
   const handleSignOut = async () => {
     try {

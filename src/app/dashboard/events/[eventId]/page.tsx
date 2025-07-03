@@ -1,14 +1,33 @@
 // src/app/dashboard/events/[eventId]/page.tsx
-// Version: 3.1 - Fix multiple choice options display
+// Version: 3.3 - Added Event Album tab for admin photo management
 
 'use client';
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, QrCode, Settings, Users, Camera, Copy, ExternalLink, MapPin, Calendar, Clock } from 'lucide-react';
+import { 
+  ArrowLeft, 
+  QrCode, 
+  Settings, 
+  Users, 
+  Camera, 
+  Copy, 
+  ExternalLink, 
+  MapPin, 
+  Calendar, 
+  Clock,
+  Image as ImageIcon,
+  Download,
+  Heart,
+  MessageCircle,
+  DownloadCloud,
+  Grid,
+  Eye,
+  EyeOff
+} from 'lucide-react';
 import QRCodeReact from 'react-qr-code';
-import { getEvent } from '@/lib/database';
-import { Event } from '@/types';
+import { getEvent, getAllEventPosts } from '@/lib/database';
+import { Event, Post } from '@/types';
 
 interface PageProps {
   params: Promise<{ eventId: string }>;
@@ -17,9 +36,15 @@ interface PageProps {
 export default function EventDetailsPage({ params }: PageProps) {
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'qr' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'qr' | 'album' | 'settings'>('overview');
   const [copySuccess, setCopySuccess] = useState(false);
   const [eventId, setEventId] = useState<string>('');
+  
+  // Album tab states
+  const [allPosts, setAllPosts] = useState<Post[]>([]);
+  const [albumLoading, setAlbumLoading] = useState(false);
+  const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
+  const [downloadingAll, setDownloadingAll] = useState(false);
 
   useEffect(() => {
     const loadEventId = async () => {
@@ -70,6 +95,28 @@ export default function EventDetailsPage({ params }: PageProps) {
     loadEvent();
   }, [eventId]);
 
+  // Load album data when album tab is activated
+  useEffect(() => {
+    if (activeTab === 'album' && event && !albumLoading && allPosts.length === 0) {
+      loadAlbumData();
+    }
+  }, [activeTab, event]);
+
+  const loadAlbumData = async () => {
+    if (!event) return;
+    
+    setAlbumLoading(true);
+    try {
+      const posts = await getAllEventPosts(event.id);
+      setAllPosts(posts);
+      console.log(`📸 Loaded ${posts.length} posts for album`);
+    } catch (error) {
+      console.error('Error loading album data:', error);
+    } finally {
+      setAlbumLoading(false);
+    }
+  };
+
   const handleCopyUrl = async () => {
     if (!event) return;
     
@@ -86,6 +133,71 @@ export default function EventDetailsPage({ params }: PageProps) {
   const handleCopyQR = () => {
     // You could implement QR code download here
     console.log('Download QR code functionality would go here');
+  };
+
+  const downloadPhoto = async (imageUrl: string, filename: string = 'photo.jpg') => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading photo:', error);
+    }
+  };
+
+  const downloadAllPhotos = async () => {
+    if (!event) return;
+    
+    setDownloadingAll(true);
+    const postsToDownload = selectedPosts.size > 0 
+      ? allPosts.filter(post => selectedPosts.has(post.id))
+      : allPosts;
+
+    try {
+      for (let i = 0; i < postsToDownload.length; i++) {
+        const post = postsToDownload[i];
+        const filename = `${event.title}-photo-${i + 1}-${post.id}.jpg`;
+        await downloadPhoto(post.imageUrl, filename);
+        
+        // Small delay to prevent overwhelming the browser
+        if (i < postsToDownload.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+    } catch (error) {
+      console.error('Error downloading photos:', error);
+    } finally {
+      setDownloadingAll(false);
+    }
+  };
+
+  const togglePostSelection = (postId: string) => {
+    setSelectedPosts(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(postId)) {
+        newSet.delete(postId);
+      } else {
+        newSet.add(postId);
+      }
+      return newSet;
+    });
+  };
+
+  const selectAllPosts = () => {
+    if (selectedPosts.size === allPosts.length) {
+      setSelectedPosts(new Set());
+    } else {
+      setSelectedPosts(new Set(allPosts.map(post => post.id)));
+    }
   };
 
   const getOptionsArray = (options: any): string[] => {
@@ -239,48 +351,6 @@ export default function EventDetailsPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* 🎯 PUT THE DEBUG SECTION HERE - RIGHT AFTER STATS, BEFORE TABS */}
-        {/* ✅ TEMPORARY DEBUG SECTION - Remove after fixing */}
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-8">
-          <h3 className="font-bold text-yellow-800 mb-3">🧪 DEBUG: Event Prompts Structure</h3>
-          <div className="text-sm space-y-2">
-            <div><strong>Event ID:</strong> {event.id}</div>
-            <div><strong>Prompts Array:</strong> {Array.isArray(event.prompts) ? 'YES' : 'NO'}</div>
-            <div><strong>Prompts Count:</strong> {event.prompts?.length || 0}</div>
-            
-            {event.prompts && Array.isArray(event.prompts) && event.prompts.map((prompt, index) => (
-              <div key={index} className="mt-3 p-3 bg-white border rounded">
-                <div className="font-medium">Prompt {index + 1}: {prompt.question}</div>
-                <div>Type: {prompt.type}</div>
-                <div>Required: {prompt.required ? 'YES' : 'NO'}</div>
-                <div>Has 'options' property: {'options' in prompt ? 'YES' : 'NO'}</div>
-                <div>Options value: {JSON.stringify(prompt.options)}</div>
-                <div>Options type: {typeof prompt.options}</div>
-                <div>Options is array: {Array.isArray(prompt.options) ? 'YES' : 'NO'}</div>
-                <div>Options length: {prompt.options?.length || 0}</div>
-                
-                {prompt.type === 'multipleChoice' && (
-                  <div className="mt-2 p-2 bg-blue-50 rounded">
-                    <strong>Multiple Choice Analysis:</strong>
-                    {prompt.options && Array.isArray(prompt.options) ? (
-                      <div>
-                        ✅ Found {prompt.options.length} options:
-                        <ul className="ml-4 mt-1">
-                          {prompt.options.map((option, optIndex) => (
-                            <li key={optIndex}>• {option}</li>
-                          ))}
-                        </ul>
-                      </div>
-                    ) : (
-                      <div className="text-red-600">❌ No valid options array found</div>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-
         {/* Tab Navigation */}
         <div className="bg-white rounded-lg shadow-sm mb-8">
           <div className="border-b border-gray-200">
@@ -312,6 +382,21 @@ export default function EventDetailsPage({ params }: PageProps) {
                 }}
               >
                 QR Code & Sharing
+              </button>
+              {/* ✅ NEW: Event Album Tab */}
+              <button
+                onClick={() => setActiveTab('album')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'album'
+                    ? 'text-indigo-600'
+                    : 'border-transparent hover:text-gray-700'
+                }`}
+                style={{
+                  borderColor: activeTab === 'album' ? '#6C63FF' : 'transparent',
+                  color: activeTab === 'album' ? '#6C63FF' : '#6B7280'
+                }}
+              >
+                Event Album
               </button>
               <button
                 onClick={() => setActiveTab('settings')}
@@ -361,7 +446,7 @@ export default function EventDetailsPage({ params }: PageProps) {
                   </div>
                 </div>
 
-                {/* Interaction Prompts - COMPLETELY FIXED VERSION */}
+                {/* Interaction Prompts */}
                 <div>
                   <h3 className="text-lg font-medium mb-4" style={{color: '#111827'}}>Interaction Prompts</h3>
                   <div className="space-y-3">
@@ -387,24 +472,12 @@ export default function EventDetailsPage({ params }: PageProps) {
                           </div>
                           <p className="mb-2" style={{color: '#374151'}}>{prompt.question}</p>
                           
-                          {/* ✅ COMPLETELY FIXED: Options display with thorough debugging */}
+                          {/* Options display for multiple choice */}
                           {prompt.type === 'multipleChoice' && (
                             <div className="mt-3">
                               <p className="text-sm mb-2 font-medium" style={{color: '#6B7280'}}>Options:</p>
                               
-                              {/* Debug info - remove after fixing */}
-                              <div className="mb-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-                                <strong>Debug:</strong> 
-                                Options property exists: {'options' in prompt ? 'YES' : 'NO'} | 
-                                Options value: {JSON.stringify(prompt.options)} | 
-                                Is Array: {Array.isArray(prompt.options) ? 'YES' : 'NO'} | 
-                                Length: {prompt.options?.length || 0}
-                              </div>
-                              
-                              {/* ✅ FIXED: Remove the typo 'prompt.option' */}
                               {(() => {
-                                // Only try to access the correct 'options' property
-                                const options = prompt.options || [];
                                 const optionsArray = getOptionsArray(prompt.options);
                                 if (optionsArray.length > 0) {
                                   return (
@@ -419,9 +492,6 @@ export default function EventDetailsPage({ params }: PageProps) {
                                     <div className="p-3 border border-orange-200 rounded-lg" style={{backgroundColor: '#FFF7ED'}}>
                                       <p className="text-sm" style={{color: '#EA580C'}}>
                                         ⚠️ No options found for this multiple choice question.
-                                      </p>
-                                      <p className="text-xs mt-1" style={{color: '#9CA3AF'}}>
-                                        Raw data: {JSON.stringify(prompt)}
                                       </p>
                                     </div>
                                   );
@@ -505,6 +575,138 @@ export default function EventDetailsPage({ params }: PageProps) {
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* ✅ NEW: Event Album Tab */}
+            {activeTab === 'album' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-medium" style={{color: '#111827'}}>Event Album</h3>
+                    <p className="text-sm" style={{color: '#6B7280'}}>
+                      All photos shared at this event ({allPosts.length} total)
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center space-x-3">
+                    {allPosts.length > 0 && (
+                      <>
+                        <button
+                          onClick={selectAllPosts}
+                          className="text-sm font-medium transition-colors hover:opacity-80"
+                          style={{color: '#6C63FF'}}
+                        >
+                          {selectedPosts.size === allPosts.length ? 'Deselect All' : 'Select All'}
+                        </button>
+                        
+                        <button
+                          onClick={downloadAllPhotos}
+                          disabled={downloadingAll}
+                          className="flex items-center text-white px-4 py-2 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                          style={{backgroundColor: '#22C55E'}}
+                        >
+                          {downloadingAll ? (
+                            <>
+                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                              Downloading...
+                            </>
+                          ) : (
+                            <>
+                              <DownloadCloud className="h-4 w-4 mr-2" />
+                              Download {selectedPosts.size > 0 ? `Selected (${selectedPosts.size})` : 'All'}
+                            </>
+                          )}
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {albumLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-16 w-16 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
+                      <p style={{color: '#6B7280'}}>Loading photos...</p>
+                    </div>
+                  </div>
+                ) : allPosts.length > 0 ? (
+                  <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {allPosts.map((post) => (
+                      <div 
+                        key={post.id} 
+                        className={`relative group border-2 rounded-lg overflow-hidden cursor-pointer transition-all ${
+                          selectedPosts.has(post.id) ? 'border-indigo-500 ring-2 ring-indigo-200' : 'border-gray-200 hover:border-gray-300'
+                        }`}
+                        onClick={() => togglePostSelection(post.id)}
+                      >
+                        <img 
+                          src={post.imageUrl} 
+                          alt={post.caption || 'Event photo'}
+                          className="w-full h-48 object-cover"
+                        />
+                        
+                        {/* Selection indicator */}
+                        <div className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                          selectedPosts.has(post.id) 
+                            ? 'bg-indigo-500 border-indigo-500' 
+                            : 'bg-white border-gray-300 group-hover:border-indigo-400'
+                        }`}>
+                          {selectedPosts.has(post.id) && (
+                            <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                              <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                          )}
+                        </div>
+
+                        {/* Approval status */}
+                        {!post.isApproved && (
+                          <div className="absolute top-2 right-2 px-2 py-1 text-xs rounded-full text-white" style={{backgroundColor: '#FF9F1C'}}>
+                            Pending
+                          </div>
+                        )}
+
+                        {/* Overlay with post info */}
+                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-all duration-200 flex items-end">
+                          <div className="p-3 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full">
+                            {post.caption && (
+                              <p className="text-sm mb-2 line-clamp-2">{post.caption}</p>
+                            )}
+                            <div className="flex items-center justify-between text-xs">
+                              <div className="flex items-center space-x-3">
+                                <span className="flex items-center">
+                                  <Heart className="h-3 w-3 mr-1" />
+                                  {post.likesCount}
+                                </span>
+                                <span className="flex items-center">
+                                  <MessageCircle className="h-3 w-3 mr-1" />
+                                  {post.commentsCount}
+                                </span>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadPhoto(post.imageUrl, `${event.title}-photo-${post.id}.jpg`);
+                                }}
+                                className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors"
+                              >
+                                <Download className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-12">
+                    <ImageIcon className="h-16 w-16 mx-auto mb-4" style={{color: '#D1D5DB'}} />
+                    <h3 className="text-lg font-semibold mb-2" style={{color: '#111827'}}>No photos yet</h3>
+                    <p style={{color: '#6B7280'}}>
+                      Photos shared by attendees will appear here. Share the event link to get started!
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

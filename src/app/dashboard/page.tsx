@@ -1,18 +1,17 @@
 // src/app/dashboard/page.tsx
-// Version: 4.0 - Complete fix for multiple choice options handling
+// Version: 4.1 - Removed back button and debug sections for better Admin UX
 
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Camera, Plus, Calendar, MapPin, Users, QrCode, ArrowLeft, Upload, X, ExternalLink } from 'lucide-react';
+import { Camera, Plus, Calendar, MapPin, Users, QrCode, Upload, X, ExternalLink } from 'lucide-react';
 import { createEvent, generateUniqueEventUrl, getUserEvents } from '@/lib/database';
 import { storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { CreateEventData, Event } from '@/types';
 
-// ✅ FIXED: Updated interface with proper options typing
 interface EventFormData {
   title: string;
   description: string;
@@ -24,7 +23,7 @@ interface EventFormData {
     question: string; 
     type: 'text' | 'multipleChoice'; 
     required: boolean; 
-    options?: string[]; // ✅ Properly typed optional options
+    options?: string[];
   }>;
 }
 
@@ -35,7 +34,6 @@ export default function DashboardPage() {
   const [userEvents, setUserEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
   
-  // ✅ FIXED: Proper form initialization
   const [formData, setFormData] = useState<EventFormData>({
     title: '',
     description: '',
@@ -163,7 +161,6 @@ export default function DashboardPage() {
     setError(''); // Clear errors when user makes changes
   };
 
-  // ✅ FIXED: Proper prompt type change handling
   const handlePromptTypeChange = (index: number, newType: 'text' | 'multipleChoice') => {
     setFormData(prev => ({
       ...prev,
@@ -172,7 +169,6 @@ export default function DashboardPage() {
           ? { 
               ...prompt, 
               type: newType,
-              // ✅ CRITICAL FIX: Properly initialize options for multiple choice
               options: newType === 'multipleChoice' ? 
                 (Array.isArray(prompt.options) && prompt.options.length > 0 ? prompt.options : ['Option 1', 'Option 2']) : 
                 undefined
@@ -181,11 +177,6 @@ export default function DashboardPage() {
       )
     }));
     console.log('🔄 Changed prompt type to:', newType, 'at index:', index);
-    
-    // Log the updated prompt for debugging
-    setTimeout(() => {
-      console.log('📋 Updated prompt:', formData.prompts[index]);
-    }, 100);
   };
 
   const addPrompt = () => {
@@ -205,7 +196,6 @@ export default function DashboardPage() {
     }
   };
 
-  // ✅ FIXED: Proper options management
   const addOption = (promptIndex: number) => {
     setFormData(prev => ({
       ...prev,
@@ -221,7 +211,6 @@ export default function DashboardPage() {
     console.log('➕ Added option to prompt', promptIndex);
   };
 
-  // ✅ FIXED: Safe option updating
   const updateOption = (promptIndex: number, optionIndex: number, value: string) => {
     setFormData(prev => ({
       ...prev,
@@ -238,7 +227,6 @@ export default function DashboardPage() {
     }));
   };
 
-  // ✅ FIXED: Safe option removal
   const removeOption = (promptIndex: number, optionIndex: number) => {
     setFormData(prev => ({
       ...prev,
@@ -262,19 +250,6 @@ export default function DashboardPage() {
 
     try {
       console.log('🚀 Starting event creation process...');
-      
-      // ✅ ADDED: Debug form data before processing
-      console.log('📋 Form data before processing:', formData);
-      formData.prompts.forEach((prompt, index) => {
-        console.log(`Prompt ${index + 1}:`, {
-          question: prompt.question,
-          type: prompt.type,
-          required: prompt.required,
-          options: prompt.options,
-          optionsArray: Array.isArray(prompt.options),
-          optionsLength: prompt.options?.length || 0
-        });
-      });
       
       // Validate that we have at least one non-empty prompt
       const validPrompts = formData.prompts.filter(prompt => prompt.question.trim() !== '');
@@ -307,7 +282,7 @@ export default function DashboardPage() {
         console.log('📸 No cover photo provided, skipping upload');
       }
 
-      // ✅ CRITICAL FIX: Proper prompts processing with options
+      // Process prompts with proper options handling
       const processedPrompts = formData.prompts
         .filter(prompt => prompt.question.trim() !== '') // Remove empty prompts
         .map((prompt, index) => {
@@ -318,31 +293,19 @@ export default function DashboardPage() {
             required: prompt.required,
           };
           
-          // ✅ CRITICAL: Handle multiple choice options properly
+          // Handle multiple choice options properly
           if (prompt.type === 'multipleChoice') {
-            console.log(`🔧 Processing multiple choice prompt ${index + 1}:`, prompt);
-            console.log(`📋 Raw options:`, prompt.options);
-            console.log(`📋 Is options array?`, Array.isArray(prompt.options));
-            
             if (prompt.options && Array.isArray(prompt.options)) {
               const filteredOptions = prompt.options
                 .filter(option => option && option.trim() !== '') // Remove empty options
                 .map(option => option.trim()); // Trim whitespace
               
-              console.log(`📋 Filtered options:`, filteredOptions);
-              
               if (filteredOptions.length > 0) {
                 processedPrompt.options = filteredOptions;
-                console.log(`✅ Added options to prompt:`, processedPrompt);
-              } else {
-                console.warn(`⚠️ No valid options for multiple choice prompt: ${prompt.question}`);
               }
-            } else {
-              console.warn(`⚠️ Invalid options array for prompt: ${prompt.question}`, prompt.options);
             }
           }
           
-          console.log(`🏁 Final processed prompt ${index + 1}:`, processedPrompt);
           return processedPrompt;
         });
 
@@ -356,7 +319,7 @@ export default function DashboardPage() {
         endDate: new Date(formData.endDate),
         coverImageUrl,
         eventUrl,
-        prompts: processedPrompts, // ✅ Use processed prompts with options
+        prompts: processedPrompts,
         isActive: true,
         requiresApproval: false,
         visibility: 'public',
@@ -366,7 +329,6 @@ export default function DashboardPage() {
       };
 
       console.log('📋 Final event data:', eventData);
-      console.log('📊 Final prompts with options:', eventData.prompts);
 
       // Create event in database
       console.log('💾 Creating event in database...');
@@ -427,10 +389,6 @@ export default function DashboardPage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center">
-              <Link href="/dashboard" className="flex items-center hover:text-gray-900 mr-6 transition-colors" style={{color: '#6B7280'}}>
-                <ArrowLeft className="h-5 w-5 mr-2" />
-                Back to Dashboard
-              </Link>
               <Camera className="h-8 w-8" style={{color: '#6C63FF'}} />
               <span className="ml-2 text-2xl font-bold" style={{color: '#111827'}}>SyncIn</span>
               <span className="ml-3 px-3 py-1 text-sm rounded-full text-white font-medium" style={{backgroundColor: '#FF9F1C'}}>Organizer</span>
@@ -622,13 +580,6 @@ export default function DashboardPage() {
           // Event Creation Form
           <div>
             <div className="flex items-center mb-8">
-              <button
-                onClick={() => setIsCreating(false)}
-                className="hover:text-gray-900 mr-4 transition-colors"
-                style={{color: '#6B7280'}}
-              >
-                <ArrowLeft className="h-5 w-5" />
-              </button>
               <h1 className="text-3xl font-bold" style={{color: '#111827'}}>Create New Event</h1>
             </div>
 
@@ -821,7 +772,7 @@ export default function DashboardPage() {
                 />
               </div>
 
-              {/* Interaction Prompts - FIXED VERSION */}
+              {/* Interaction Prompts */}
               <div className="mb-8">
                 <div className="flex justify-between items-center mb-4">
                   <h3 className="text-lg font-medium" style={{color: '#111827'}}>Interaction Prompts (Optional)</h3>
@@ -895,7 +846,6 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
-                    {/* ✅ FIXED: Multiple choice options handling */}
                     {prompt.type === 'multipleChoice' && (
                       <div>
                         <label className="block text-sm font-medium mb-3" style={{color: '#111827'}}>
@@ -927,14 +877,6 @@ export default function DashboardPage() {
                             </div>
                           ))}
                           
-                          {(!prompt.options || !Array.isArray(prompt.options) || prompt.options.length === 0) && (
-                            <div className="p-3 border border-orange-200 rounded-lg" style={{backgroundColor: '#FFF7ED'}}>
-                              <p className="text-sm" style={{color: '#EA580C'}}>
-                                No options added yet. Click "Add option" below to get started.
-                              </p>
-                            </div>
-                          )}
-                          
                           <button
                             type="button"
                             onClick={() => addOption(index)}
@@ -944,26 +886,11 @@ export default function DashboardPage() {
                             <Plus className="w-4 h-4 mr-1" />
                             Add option
                           </button>
-                          
-                          {/* ✅ Temporary debug info - remove after fixing */}
-                          <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-                            <strong>Debug:</strong> Options: {JSON.stringify(prompt.options)} | 
-                            Is Array: {Array.isArray(prompt.options).toString()} | 
-                            Length: {prompt.options?.length || 0}
-                          </div>
                         </div>
                       </div>
                     )}
                   </div>
                 ))}
-              </div>
-
-              {/* ✅ Temporary debug section - remove after fixing */}
-              <div className="mb-6 p-4 bg-gray-100 rounded-lg">
-                <h4 className="font-medium mb-2">🧪 Debug: Current Form Data</h4>
-                <pre className="text-xs overflow-auto max-h-40">
-                  {JSON.stringify(formData.prompts, null, 2)}
-                </pre>
               </div>
 
               {/* Submit Button */}
