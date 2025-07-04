@@ -1,21 +1,26 @@
 // src/types/index.ts
-// Version: 2.0 - Enhanced with attendee experience features
+// Version: 3.1 - Added array-based likes support (like React Native)
 
 export interface SocialProfiles {
   instagram?: string;   // Instagram handle without @
   linkedin?: string;    // LinkedIn handle without @
   facebook?: string;    // Facebook handle without @
+  phone?: string;       // Phone number for networking
 }
 
 export interface User {
   id: string;                    // Firebase Auth UID
   email: string;
-  displayName: string;
+  displayName?: string;          // Made optional to match actual usage
+  name?: string;                 // Alternative name field
   profilePhotoUrl?: string;
   role: 'organizer' | 'attendee' | 'both';
   
   // Social profiles for attendee networking
   socialProfiles?: SocialProfiles;
+  instagram?: string;            // Direct fields for backward compatibility
+  linkedin?: string;
+  phone?: string;
   
   // Subscription (for organizers)
   subscription?: {
@@ -31,8 +36,8 @@ export interface User {
   // Metadata
   createdAt: Date;
   lastLoginAt: Date;
-  eventsOrganized: number;      // Count for analytics
-  eventsAttended: number;       // Count for analytics
+  eventsOrganized?: number;      // Count for analytics
+  eventsAttended?: number;       // Count for analytics
 }
 
 export interface EventPrompt {
@@ -93,6 +98,11 @@ export interface Event {
   status: 'draft' | 'live' | 'ended' | 'archived';
 }
 
+export interface PromptResponse {
+  question: string;
+  answer: string;
+}
+
 export interface EventParticipant {
   id: string;                   // Auto-generated
   eventId: string;              // Reference to events
@@ -101,7 +111,7 @@ export interface EventParticipant {
   // Event-specific Profile
   displayName: string;          // Can be different from user.displayName
   profilePhotoUrl?: string;     // Can override user's main profile photo for this event
-  promptResponses: Record<string, string>; // promptId -> response
+  promptResponses?: PromptResponse[]; // Array of prompt responses
   
   // Participation Status
   joinedAt: Date;
@@ -143,13 +153,20 @@ export interface Post {
   isApproved: boolean;
   isReported: boolean;
   moderationNotes?: string;
+  approvedAt?: Date;            // When post was approved
   
-  // Engagement
+  // ✅ NEW: Array-based likes (like React Native)
+  likes: string[];              // Array of user IDs who liked the post
+  
+  // Engagement (calculated from arrays)
   likesCount: number;
   commentsCount: number;
   
   // Technical
   imageMetadata?: ImageMetadata;
+  
+  // ✅ NEW: Author profile photo support
+  authorProfilePicUrl?: string;
 }
 
 export interface Comment {
@@ -157,10 +174,10 @@ export interface Comment {
   postId: string;               // Reference to posts
   participantId: string;        // Reference to eventParticipants
   userId: string;               // Reference to users
-  eventId: string;              // Reference to events (added for stats updates)
+  eventId: string;              // Reference to events (for stats updates)
   
-  // Content
-  text: string;
+  // Content - FIXED: Changed from 'text' to 'content' to match database functions
+  content: string;
   
   // Metadata
   createdAt: Date;
@@ -171,26 +188,47 @@ export interface Comment {
   isReported: boolean;
 }
 
-export type ReactionType = 'like' | 'love' | 'fire' | 'clap';
+// ✅ SIMPLIFIED: Keeping reaction types for backward compatibility
+export type ReactionType = 'like' | 'dislike' | 'love' | 'fire' | 'clap';
 
 export interface Reaction {
   id: string;
   postId: string;               // Reference to posts
   participantId: string;        // Reference to eventParticipants
   userId: string;               // Reference to users
-  eventId: string;              // Reference to events (added for stats updates)
+  eventId: string;              // Reference to events (for stats updates)
   
   type: ReactionType;
   createdAt: Date;
 }
 
-// Utility types for creating new documents (without auto-generated fields)
+// ✅ UPDATED: Create types for new array-based approach
 export type CreateUserData = Omit<User, 'id' | 'createdAt' | 'lastLoginAt'>;
 export type CreateEventData = Omit<Event, 'id' | 'createdAt' | 'updatedAt' | 'stats'>;
 export type CreateParticipantData = Omit<EventParticipant, 'id' | 'joinedAt' | 'postsCount' | 'likesReceived' | 'commentsReceived'>;
-export type CreatePostData = Omit<Post, 'id' | 'createdAt' | 'likesCount' | 'commentsCount'>;
-export type CreateCommentData = Omit<Comment, 'id' | 'createdAt'>;
-export type CreateReactionData = Omit<Reaction, 'id' | 'createdAt'>;
+
+// ✅ NEW: Updated post creation to include likes array
+export type CreatePostData = Omit<Post, 'id' | 'createdAt' | 'likesCount' | 'commentsCount' | 'likes'> & {
+  likes?: string[]; // Optional likes array for new posts (defaults to empty)
+};
+
+export type CreateCommentData = {
+  postId: string;
+  participantId: string;
+  userId: string;
+  eventId: string;
+  content: string;              // FIXED: Changed from 'text' to 'content'
+  isApproved: boolean;
+  isReported: boolean;
+};
+
+export type CreateReactionData = {
+  postId: string;
+  participantId: string;
+  userId: string;               // REQUIRED: For tracking who liked
+  eventId: string;              // REQUIRED: For stats updates
+  type: ReactionType;
+};
 
 // New types for attendee experience
 export interface UserEventHistory {
@@ -206,4 +244,37 @@ export interface ProfileUpdateData {
   displayName?: string;
   profilePhotoUrl?: string;
   socialProfiles?: SocialProfiles;
+}
+
+// ✅ UPDATED: Types for real-time interactions in feed
+export interface PostWithInteractions extends Post {
+  userHasLiked: boolean;
+  comments: Comment[];
+  likes: string[];              // Array of user IDs
+  authorProfilePicUrl?: string; // Author's profile photo
+}
+
+// ADDED: Types for search and navigation
+export interface NavigationParams {
+  eventUrl?: string;
+  eventId?: string;
+  userId?: string;
+  postId?: string;
+}
+
+// ADDED: Types for form data
+export interface EventCreationForm {
+  title: string;
+  description: string;
+  location: string;
+  startDate: string;
+  endDate: string;
+  prompts: EventPrompt[];
+  moderationEnabled: boolean;
+  requiresApproval: boolean;
+}
+
+export interface ParticipantRegistrationForm {
+  displayName: string;
+  promptResponses: Record<string, string>;
 }
