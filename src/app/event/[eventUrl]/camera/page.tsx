@@ -43,11 +43,7 @@ export default function EventCameraPage({ params }: PageProps) {
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // Camera states
-  const [stream, setStream] = useState<MediaStream | null>(null);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
-  const [flashEnabled, setFlashEnabled] = useState(false);
+  // Photo states
   const [capturedPhoto, setCapturedPhoto] = useState<string>('');
   const [isFirstPostInEvent, setIsFirstPostInEvent] = useState(false);
 
@@ -125,68 +121,6 @@ export default function EventCameraPage({ params }: PageProps) {
     loadEventData();
   }, [eventUrl, currentUser, router]);
 
-  const startCamera = async () => {
-    try {
-      const constraints = {
-        video: { 
-          facingMode,
-          width: { ideal: 1920 },
-          height: { ideal: 1080 }
-        },
-        audio: false
-      };
-
-      const mediaStream = await navigator.mediaDevices.getUserMedia(constraints);
-      setStream(mediaStream);
-      setCameraActive(true);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      setError('Unable to access camera. Please check permissions or use file upload.');
-    }
-  };
-
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-    setCameraActive(false);
-  };
-
-  const switchCamera = async () => {
-    stopCamera();
-    setFacingMode(prev => prev === 'user' ? 'environment' : 'user');
-    setTimeout(startCamera, 100);
-  };
-
-  const capturePhoto = () => {
-    if (!videoRef.current || !canvasRef.current) return;
-
-    const canvas = canvasRef.current;
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    
-    // Apply flash effect
-    if (flashEnabled) {
-      document.body.style.backgroundColor = 'white';
-      setTimeout(() => {
-        document.body.style.backgroundColor = '';
-      }, 100);
-    }
-
-    context.drawImage(videoRef.current, 0, 0);
-    const photoDataUrl = canvas.toDataURL('image/jpeg', 0.8);
-    setCapturedPhoto(photoDataUrl);
-    setShowCaptionModal(true);
-    stopCamera();
-  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -303,19 +237,6 @@ export default function EventCameraPage({ params }: PageProps) {
     }
   };
 
-  // Auto-start camera when component loads
-  useEffect(() => {
-    if (!loading && !error && event && participant) {
-      startCamera();
-    }
-
-    // Cleanup on unmount
-    return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, [loading, error, event, participant]);
 
   if (loading) {
     return (
@@ -369,109 +290,47 @@ export default function EventCameraPage({ params }: PageProps) {
         </div>
       </header>
 
-      {/* Full Screen Camera */}
-      <div className="flex-1 relative bg-black">
-        {cameraActive && stream ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-center text-white">
-            <div>
-              <Camera className="h-24 w-24 mx-auto mb-4 opacity-50" />
-              <p className="text-lg mb-4">Ready to capture your SyncIn moment?</p>
-              <button
-                onClick={startCamera}
-                className="text-white px-6 py-3 rounded-lg font-semibold transition-colors hover:opacity-90"
-                style={{backgroundColor: '#6C63FF'}}
-              >
-                Start Camera
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* First Post Welcome Overlay */}
-        {isFirstPostInEvent && cameraActive && (
-          <div className="absolute top-20 left-4 right-4 z-10">
-            <div className="bg-black/80 backdrop-blur-sm p-6 rounded-2xl border border-white/20">
-              <p className="text-white text-lg font-bold text-center mb-2">
+      {/* Simple Upload Interface */}
+      <div className="flex-1 flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+        <div className="text-center max-w-md mx-auto px-6">
+          {/* Welcome Message */}
+          {isFirstPostInEvent && (
+            <div className="mb-8 p-6 rounded-2xl border" style={{backgroundColor: '#F0FDF4', borderColor: '#BBF7D0'}}>
+              <h2 className="text-xl font-bold mb-2" style={{color: '#166534'}}>
                 Welcome to {event.title}! 👋
+              </h2>
+              <p className="text-sm leading-relaxed" style={{color: '#166534'}}>
+                Share your first SyncIn moment to unlock this event's feed and connect with other attendees
               </p>
-              <p className="text-white/80 text-sm text-center leading-relaxed">
-                Capture your first SyncIn moment to unlock this event's feed and connect with other attendees
+            </div>
+          )}
+
+          {/* Take Photo Button */}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="w-full max-w-sm mx-auto px-8 py-6 rounded-2xl font-semibold text-lg transition-colors hover:opacity-90 flex items-center justify-center space-x-3 shadow-lg"
+            style={{backgroundColor: '#6C63FF', color: 'white'}}
+          >
+            <Camera className="h-8 w-8" />
+            <span>Click to Take Photo</span>
+          </button>
+
+          {/* Fun Description */}
+          <div className="mt-6 text-center">
+            <p className="text-sm" style={{color: '#6B7280'}}>
+              📸 Capture your moment and share it with everyone! ✨
+            </p>
+          </div>
+
+          {/* First Post Info */}
+          {isFirstPostInEvent && (
+            <div className="mt-8 p-4 rounded-lg border" style={{backgroundColor: '#EDE9FE', borderColor: '#C4B5FD'}}>
+              <p className="text-sm" style={{color: '#6D28D9'}}>
+                🔓 This will unlock this event's feed! Once you share, you'll be able to see and interact with all the moments from "{event.title}".
               </p>
             </div>
-          </div>
-        )}
-
-        {/* Camera Controls Overlay */}
-        {cameraActive && (
-          <div className="absolute inset-0 pointer-events-none">
-            {/* Top Controls */}
-            <div className="absolute top-0 left-0 right-0 p-6 flex justify-between pointer-events-auto">
-              {/* Flash Toggle */}
-              <button
-                onClick={() => setFlashEnabled(!flashEnabled)}
-                className={`p-3 rounded-full transition-colors ${
-                  flashEnabled 
-                    ? 'bg-yellow-500 shadow-lg' 
-                    : 'bg-black/40 backdrop-blur-sm border border-white/20'
-                }`}
-              >
-                {flashEnabled ? 
-                  <Zap className="h-6 w-6 text-white" /> : 
-                  <ZapOff className="h-6 w-6 text-white" />
-                }
-              </button>
-
-              {/* Switch Camera */}
-              <button
-                onClick={switchCamera}
-                className="p-3 rounded-full bg-black/40 backdrop-blur-sm border border-white/20 transition-colors hover:bg-black/60"
-                title={`Switch to ${facingMode === 'user' ? 'back' : 'front'} camera`}
-              >
-                <RotateCcw className="h-6 w-6 text-white" />
-              </button>
-            </div>
-
-            {/* Bottom Controls */}
-            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-8 pointer-events-auto">
-              <div className="flex items-center justify-center space-x-8">
-                {/* Upload Option */}
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="p-4 rounded-full bg-black/40 backdrop-blur-sm border border-white/20 transition-colors hover:bg-black/60"
-                >
-                  <Upload className="h-6 w-6 text-white" />
-                </button>
-
-                {/* Capture Button */}
-                <button
-                  onClick={capturePhoto}
-                  className="w-20 h-20 bg-white rounded-full flex items-center justify-center hover:bg-gray-100 transition-colors shadow-lg"
-                >
-                  <div className="w-16 h-16 bg-white border-4 border-gray-300 rounded-full"></div>
-                </button>
-
-                {/* Instructions */}
-                <div className="w-16 h-16 flex items-center justify-center">
-                  <p className="text-white/80 text-xs text-center leading-tight">
-                    Tap to capture
-                  </p>
-                </div>
-              </div>
-
-              <div className="text-center mt-4">
-                <p className="text-white/60 text-sm font-medium tracking-wider">SyncIn</p>
-              </div>
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Caption Modal */}
@@ -586,7 +445,6 @@ export default function EventCameraPage({ params }: PageProps) {
                     setCapturedPhoto('');
                     setPostCaption('');
                     setPostTags('');
-                    startCamera(); // Restart camera
                   }}
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   style={{color: '#6B7280'}}
@@ -618,14 +476,12 @@ export default function EventCameraPage({ params }: PageProps) {
         </div>
       )}
 
-      {/* Hidden Canvas for Photo Capture */}
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
-      
       {/* Hidden File Input */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
+        capture="environment"
         onChange={handleFileUpload}
         style={{ display: 'none' }}
       />
