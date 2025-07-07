@@ -116,7 +116,7 @@ export default function MyEventsPage() {
   const handleSignOut = async () => {
     try {
       await signOutUser();
-      router.push('/');
+      router.push('/auth/signin');
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -268,13 +268,6 @@ export default function MyEventsPage() {
         <div className="mb-8">
           <div className="flex justify-between items-center mb-6">
             <h2 className="text-2xl font-bold" style={{color: '#111827'}}>Your Events</h2>
-            <Link
-              href="/"
-              className="text-white px-4 py-2 rounded-lg transition-colors hover:opacity-90 text-sm font-medium"
-              style={{backgroundColor: '#6C63FF'}}
-            >
-              Join New Event
-            </Link>
           </div>
 
           {error && (
@@ -383,7 +376,7 @@ export default function MyEventsPage() {
 
                     {/* View Event Button */}
                     <Link
-                      href={`/event/${item.event.eventUrl}/camera`}
+                      href={`/event/${item.event.eventUrl}/feed`}
                       className="w-full text-white py-2 rounded-lg font-medium transition-colors hover:opacity-90 flex items-center justify-center"
                       style={{backgroundColor: '#6C63FF'}}
                     >

@@ -5,14 +5,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import Link from 'next/link';
 import { 
   ArrowLeft,
   User,
   Camera,
   Instagram,
   Linkedin,
-  Phone,
+  Facebook,
   MapPin
 } from 'lucide-react';
 import { 
@@ -162,8 +161,16 @@ export default function UserProfilePage() {
           <div className="bg-white rounded-2xl shadow-sm p-8">
             <div className="flex flex-col items-center text-center">
               {/* Avatar */}
-              <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6" style={{backgroundColor: '#EDE9FE'}}>
-                <User className="h-12 w-12" style={{color: '#6C63FF'}} />
+              <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6 overflow-hidden" style={{backgroundColor: '#EDE9FE'}}>
+                {user.profilePhotoUrl ? (
+                  <img
+                    src={user.profilePhotoUrl}
+                    alt={participant.displayName || 'Profile photo'}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <User className="h-12 w-12" style={{color: '#6C63FF'}} />
+                )}
               </div>
 
               {/* Name */}
@@ -178,7 +185,7 @@ export default function UserProfilePage() {
               </div>
 
               {/* Social Links */}
-              {(user.socialProfiles?.instagram || user.socialProfiles?.linkedin) && (
+              {(user.socialProfiles?.instagram || user.socialProfiles?.linkedin || user.socialProfiles?.facebook) && (
                 <div className="flex flex-wrap gap-4 justify-center">
                   {user.socialProfiles?.instagram && (
                     <a
@@ -204,6 +211,18 @@ export default function UserProfilePage() {
                       LinkedIn
                     </a>
                   )}
+                  {user.socialProfiles?.facebook && (
+                    <a
+                      href={`https://facebook.com/${user.socialProfiles.facebook}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex items-center text-sm font-medium hover:opacity-80 transition-opacity"
+                      style={{color: '#6C63FF'}}
+                    >
+                      <Facebook className="h-4 w-4 mr-1" />
+                      Facebook
+                    </a>
+                  )}
                 </div>
               )}
             </div>
@@ -216,16 +235,22 @@ export default function UserProfilePage() {
                 About {participant.displayName}
               </h3>
               <div className="space-y-4">
-                {Object.entries(participant.promptResponses).map(([question, answer], index) => (
-                  <div key={index} className="border-l-4 pl-4" style={{borderColor: '#6C63FF'}}>
-                    <h4 className="text-sm font-medium mb-1" style={{color: '#6B7280'}}>
-                      {question}
-                    </h4>
-                    <p className="text-base" style={{color: '#111827'}}>
-                      {answer}
-                    </p>
-                  </div>
-                ))}
+                {Object.entries((participant.promptResponses as unknown) as Record<string, string>).map(([promptId, answer], index) => {
+                  // Find the corresponding prompt in the event prompts
+                  const prompt = event.prompts?.find(p => p.id === promptId);
+                  const question = prompt?.question || `Question ${index + 1}`;
+                  
+                  return (
+                    <div key={index} className="border-l-4 pl-4" style={{borderColor: '#6C63FF'}}>
+                      <h4 className="text-sm font-medium mb-1" style={{color: '#6B7280'}}>
+                        {question}
+                      </h4>
+                      <p className="text-base" style={{color: '#111827'}}>
+                        {answer}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -245,7 +270,11 @@ export default function UserProfilePage() {
             {userPosts.length > 0 ? (
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {userPosts.map((post) => (
-                  <div key={post.id} className="group cursor-pointer">
+                  <div 
+                    key={post.id} 
+                    className="group cursor-pointer"
+                    onClick={() => router.push(`/event/${eventUrl}/feed?postId=${post.id}`)}
+                  >
                     <div className="aspect-square rounded-lg overflow-hidden" style={{backgroundColor: '#F3F4F6'}}>
                       <img
                         src={post.imageUrl}
@@ -280,46 +309,6 @@ export default function UserProfilePage() {
             )}
           </div>
 
-          {/* Stats Card */}
-          <div className="bg-white rounded-2xl shadow-sm p-6">
-            <h3 className="text-lg font-bold mb-4" style={{color: '#111827'}}>
-              Event Stats
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="text-2xl font-bold" style={{color: '#6C63FF'}}>
-                  {userPosts.length}
-                </div>
-                <div className="text-sm" style={{color: '#6B7280'}}>
-                  Photos Shared
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold" style={{color: '#FF9F1C'}}>
-                  {userPosts.reduce((sum, post) => sum + post.likesCount, 0)}
-                </div>
-                <div className="text-sm" style={{color: '#6B7280'}}>
-                  Likes Received
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold" style={{color: '#22C55E'}}>
-                  {userPosts.reduce((sum, post) => sum + post.commentsCount, 0)}
-                </div>
-                <div className="text-sm" style={{color: '#6B7280'}}>
-                  Comments Received
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-2xl font-bold" style={{color: '#8B5CF6'}}>
-                  {participant.joinedAt ? new Date(participant.joinedAt).toLocaleDateString() : 'N/A'}
-                </div>
-                <div className="text-sm" style={{color: '#6B7280'}}>
-                  Joined Event
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </main>
     </div>

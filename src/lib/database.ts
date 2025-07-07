@@ -20,7 +20,8 @@ import {
   arrayUnion,
   arrayRemove,
 } from 'firebase/firestore';
-import { db } from './firebase';
+import { ref, deleteObject } from 'firebase/storage';
+import { db, storage } from './firebase';
 import {
   User,
   Event,
@@ -483,6 +484,86 @@ export const updateEvent = async (eventId: string, updates: Partial<Event>): Pro
   await updateDoc(eventDoc, { ...updates, updatedAt: new Date() });
 };
 
+// Delete event and all associated data
+export const deleteEvent = async (eventId: string): Promise<void> => {
+  try {
+    console.log('🗑️ Starting event deletion process for:', eventId);
+
+    // Step 1: Get all posts for this event
+    const postsQuery = query(postsCollection, where('eventId', '==', eventId));
+    const postsSnapshot = await getDocs(postsQuery);
+    
+    // Step 2: Delete all storage files (images) for posts in this event
+    const storageDeletionPromises = [];
+    for (const postDoc of postsSnapshot.docs) {
+      const postData = postDoc.data();
+      if (postData.imageUrl) {
+        try {
+          // Extract the storage path from the URL
+          // URLs look like: https://firebasestorage.googleapis.com/v0/b/.../o/events%2F{eventId}%2Fposts%2F{userId}%2F{timestamp}.jpg?alt=media&token=...
+          const urlParts = postData.imageUrl.split('/o/')[1]?.split('?')[0];
+          if (urlParts) {
+            const storagePath = decodeURIComponent(urlParts);
+            const imageRef = ref(storage, storagePath);
+            storageDeletionPromises.push(deleteObject(imageRef));
+          }
+        } catch (error) {
+          console.warn(`⚠️ Could not delete storage file for post ${postDoc.id}:`, error);
+          // Continue with other deletions even if one fails
+        }
+      }
+    }
+    
+    if (storageDeletionPromises.length > 0) {
+      await Promise.allSettled(storageDeletionPromises); // Use allSettled to continue even if some fail
+      console.log(`✅ Attempted to delete ${storageDeletionPromises.length} storage files`);
+    }
+
+    // Step 3: Delete all comments for posts in this event
+    const commentDeletionPromises = [];
+    for (const postDoc of postsSnapshot.docs) {
+      const commentsQuery = query(commentsCollection, where('postId', '==', postDoc.id));
+      const commentsSnapshot = await getDocs(commentsQuery);
+      
+      for (const commentDoc of commentsSnapshot.docs) {
+        commentDeletionPromises.push(deleteDoc(commentDoc.ref));
+      }
+    }
+    
+    if (commentDeletionPromises.length > 0) {
+      await Promise.all(commentDeletionPromises);
+      console.log(`✅ Deleted ${commentDeletionPromises.length} comments`);
+    }
+
+    // Step 4: Delete all posts for this event (Firestore documents)
+    const postDeletionPromises = postsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+    if (postDeletionPromises.length > 0) {
+      await Promise.all(postDeletionPromises);
+      console.log(`✅ Deleted ${postDeletionPromises.length} posts`);
+    }
+
+    // Step 5: Delete all participants for this event
+    const participantsQuery = query(participantsCollection, where('eventId', '==', eventId));
+    const participantsSnapshot = await getDocs(participantsQuery);
+    const participantDeletionPromises = participantsSnapshot.docs.map(doc => deleteDoc(doc.ref));
+    
+    if (participantDeletionPromises.length > 0) {
+      await Promise.all(participantDeletionPromises);
+      console.log(`✅ Deleted ${participantDeletionPromises.length} participants`);
+    }
+
+    // Step 6: Finally, delete the event itself
+    const eventDoc = doc(eventsCollection, eventId);
+    await deleteDoc(eventDoc);
+    console.log('✅ Deleted event document');
+
+    console.log('🎉 Event deletion completed successfully');
+  } catch (error) {
+    console.error('❌ Error deleting event:', error);
+    throw new Error(`Failed to delete event: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+};
+
 // Event Participant operations
 export const createEventParticipant = async (
   participantData: CreateParticipantData
@@ -559,11 +640,43 @@ export const updateParticipant = async (
   await updateDoc(participantDoc, updates);
 };
 
+// Propagate display name changes to all user's event participations
+export const propagateDisplayNameToParticipations = async (
+  userId: string,
+  newDisplayName: string
+): Promise<void> => {
+  try {
+    console.log('🔄 Propagating display name to all participations for user:', userId);
+    
+    // Get all participations for this user
+    const q = query(
+      participantsCollection,
+      where('userId', '==', userId)
+    );
+    const querySnapshot = await getDocs(q);
+    
+    // Update each participation
+    const updatePromises = querySnapshot.docs.map(doc => {
+      const participantDoc = doc.ref;
+      return updateDoc(participantDoc, { displayName: newDisplayName });
+    });
+    
+    await Promise.all(updatePromises);
+    
+    console.log(`✅ Updated display name in ${querySnapshot.size} participations`);
+  } catch (error) {
+    console.error('❌ Error propagating display name:', error);
+    throw error;
+  }
+};
+
 // ✅ SIMPLIFIED: Post operations
 
 // ✅ Get all posts for admin/organizer (including unapproved ones)
 export const getAllEventPosts = async (eventId: string): Promise<Post[]> => {
   try {
+    // Try with orderBy first
+    console.log('🔍 Loading all event posts for:', eventId);
     const q = query(
       postsCollection,
       where('eventId', '==', eventId),
@@ -577,29 +690,39 @@ export const getAllEventPosts = async (eventId: string): Promise<Post[]> => {
         ...data,
         id: doc.id,
         likes: Array.isArray(data.likes) ? data.likes : [], // ✅ Ensure likes is array
-        likesCount: Array.isArray(data.likes) ? data.likes.length : (data.likesCount || 0)
+        likesCount: Array.isArray(data.likes) ? data.likes.length : (data.likesCount || 0),
+        commentsCount: data.commentsCount || 0
       } as Post);
     });
     
-    console.log(`📋 Loaded ${posts.length} total posts (admin view) for event: ${eventId}`);
+    console.log(`✅ Loaded ${posts.length} total posts (admin view) for event: ${eventId}`);
+    console.log('📋 Posts sample:', posts.slice(0, 2));
     return posts;
   } catch (error) {
     if (isIndexError(error)) {
-      console.error('🔥 FIREBASE INDEX REQUIRED for getAllEventPosts!');
-      // Fallback logic...
-      const fallbackQuery = query(postsCollection, where('eventId', '==', eventId));
-      const querySnapshot = await getDocs(fallbackQuery);
-      const posts = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return convertTimestamps({
-          ...data,
-          id: doc.id,
-          likes: Array.isArray(data.likes) ? data.likes : [],
-          likesCount: Array.isArray(data.likes) ? data.likes.length : (data.likesCount || 0)
-        } as Post);
-      });
-      posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      return posts;
+      console.warn('🔥 FIREBASE INDEX REQUIRED for getAllEventPosts - using fallback!');
+      // Fallback without orderBy
+      try {
+        const fallbackQuery = query(postsCollection, where('eventId', '==', eventId));
+        const querySnapshot = await getDocs(fallbackQuery);
+        const posts = querySnapshot.docs.map(doc => {
+          const data = doc.data();
+          return convertTimestamps({
+            ...data,
+            id: doc.id,
+            likes: Array.isArray(data.likes) ? data.likes : [],
+            likesCount: Array.isArray(data.likes) ? data.likes.length : (data.likesCount || 0),
+            commentsCount: data.commentsCount || 0
+          } as Post);
+        });
+        // Sort manually
+        posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        console.log(`✅ Fallback loaded ${posts.length} posts for event: ${eventId}`);
+        return posts;
+      } catch (fallbackError) {
+        console.error('❌ Fallback query also failed:', fallbackError);
+        return [];
+      }
     }
     
     console.error('❌ Error in getAllEventPosts:', error);
@@ -787,11 +910,11 @@ export const getUserEventParticipations = async (userId: string): Promise<EventP
 
 export const getUserPostsInEvent = async (eventId: string, userId: string): Promise<Post[]> => {
   try {
+    // Use simpler query without orderBy to avoid index requirements
     const q = query(
       postsCollection,
       where('eventId', '==', eventId),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', userId)
     );
     const querySnapshot = await getDocs(q);
     const posts = querySnapshot.docs.map(doc => {
@@ -803,29 +926,13 @@ export const getUserPostsInEvent = async (eventId: string, userId: string): Prom
         likesCount: Array.isArray(data.likes) ? data.likes.length : (data.likesCount || 0)
       } as Post);
     });
+    
+    // Sort in JavaScript instead of Firestore to avoid index requirement
+    posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
+    console.log(`✅ Found ${posts.length} posts for user ${userId} in event ${eventId}`);
     return posts;
   } catch (error) {
-    if (isIndexError(error)) {
-      console.error('🔥 INDEX ERROR in getUserPostsInEvent - using fallback');
-      const fallbackQuery = query(
-        postsCollection,
-        where('eventId', '==', eventId),
-        where('userId', '==', userId)
-      );
-      const querySnapshot = await getDocs(fallbackQuery);
-      const posts = querySnapshot.docs.map(doc => {
-        const data = doc.data();
-        return convertTimestamps({
-          ...data,
-          id: doc.id,
-          likes: Array.isArray(data.likes) ? data.likes : [],
-          likesCount: Array.isArray(data.likes) ? data.likes.length : (data.likesCount || 0)
-        } as Post);
-      });
-      posts.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-      return posts;
-    }
-    
     console.error('❌ Error in getUserPostsInEvent:', error);
     return [];
   }

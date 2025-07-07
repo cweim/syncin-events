@@ -29,7 +29,6 @@ import { User as UserType } from '@/types';
 export default function ProfilePage() {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
   
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userData, setUserData] = useState<UserType | null>(null);
@@ -47,8 +46,6 @@ export default function ProfilePage() {
     facebook: ''
   });
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string>('');
-  const [showCamera, setShowCamera] = useState(false);
-  const [stream, setStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
     // Check authentication
@@ -73,7 +70,7 @@ export default function ProfilePage() {
         
         setUserData(user);
         setFormData({
-          displayName: user.displayName,
+          displayName: user.displayName || '',
           profilePhoto: null,
           instagram: user.socialProfiles?.instagram || '',
           linkedin: user.socialProfiles?.linkedin || '',
@@ -114,52 +111,6 @@ export default function ProfilePage() {
     }
   };
 
-  const startCamera = async () => {
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: false
-      });
-      setStream(mediaStream);
-      setShowCamera(true);
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      setError('Unable to access camera. Please use file upload instead.');
-    }
-  };
-
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-    setShowCamera(false);
-  };
-
-  const capturePhoto = () => {
-    if (!videoRef.current) return;
-
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    context.drawImage(videoRef.current, 0, 0);
-
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], 'profile-photo.jpg', { type: 'image/jpeg' });
-        setFormData(prev => ({ ...prev, profilePhoto: file }));
-        setProfilePhotoPreview(canvas.toDataURL());
-        stopCamera();
-      }
-    }, 'image/jpeg', 0.8);
-  };
 
   const uploadProfilePhoto = async (file: File): Promise<string> => {
     if (!currentUser) throw new Error('User not authenticated');
@@ -179,28 +130,6 @@ export default function ProfilePage() {
     return await getDownloadURL(snapshot.ref);
   };
 
-  const removeProfilePhoto = async () => {
-    if (!userData?.profilePhotoUrl) return;
-
-    try {
-      // Delete from storage
-      const photoRef = ref(storage, userData.profilePhotoUrl);
-      await deleteObject(photoRef);
-      
-      // Update user profile
-      await updateUser(currentUser.uid, { profilePhotoUrl: undefined });
-      
-      // Update local state
-      setProfilePhotoPreview('');
-      setFormData(prev => ({ ...prev, profilePhoto: null }));
-      setUserData(prev => prev ? { ...prev, profilePhotoUrl: undefined } : null);
-      
-      setSuccessMessage('Profile photo removed successfully');
-    } catch (error) {
-      console.error('Error removing photo:', error);
-      setError('Failed to remove profile photo');
-    }
-  };
 
   const validateForm = () => {
     if (!formData.displayName.trim()) {
@@ -236,7 +165,7 @@ export default function ProfilePage() {
       // Update user profile
       await updateUser(currentUser.uid, {
         displayName: formData.displayName,
-        profilePhotoUrl,
+        profilePhotoUrl: profilePhotoUrl || undefined,
         socialProfiles: {
           instagram: formData.instagram.trim() ? formData.instagram.replace('@', '') : '',
           linkedin: formData.linkedin.trim() ? formData.linkedin.replace('@', '') : '',
@@ -252,6 +181,11 @@ export default function ProfilePage() {
       setFormData(prev => ({ ...prev, profilePhoto: null }));
       
       setSuccessMessage('Profile updated successfully!');
+      
+      // Auto-redirect to my-events page after short delay
+      setTimeout(() => {
+        router.push('/my-events');
+      }, 1500);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to update profile';
       setError(errorMessage);
@@ -349,56 +283,15 @@ export default function ProfilePage() {
                       </div>
                     )}
                     
-                    {/* Remove Photo Button */}
-                    {profilePhotoPreview && (
-                      <button
-                        type="button"
-                        onClick={removeProfilePhoto}
-                        className="absolute -top-2 -right-2 p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
-                        title="Remove photo"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    )}
                   </div>
                 </div>
 
-                {/* Camera Modal */}
-                {showCamera && (
-                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        className="w-full rounded-lg mb-4"
-                      />
-                      <div className="flex space-x-2">
-                        <button
-                          type="button"
-                          onClick={capturePhoto}
-                          className="flex-1 text-white py-2 rounded-lg font-medium"
-                          style={{backgroundColor: '#6C63FF'}}
-                        >
-                          Capture
-                        </button>
-                        <button
-                          type="button"
-                          onClick={stopCamera}
-                          className="flex-1 bg-gray-500 text-white py-2 rounded-lg font-medium"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
+  
                 {/* Photo Upload Options */}
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     type="button"
-                    onClick={startCamera}
+                    onClick={() => fileInputRef.current?.click()}
                     className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <Camera className="h-5 w-5 mr-2" style={{color: '#6B7280'}} />
@@ -419,6 +312,7 @@ export default function ProfilePage() {
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
+                  capture="environment"
                   onChange={handleFileUpload}
                   className="hidden"
                 />

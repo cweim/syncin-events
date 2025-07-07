@@ -11,7 +11,7 @@ import {
   updateProfile,
 } from 'firebase/auth';
 import { auth } from './firebase';
-import { createUser, getUser, updateUser as updateUserInDb } from './database';
+import { createUser, getUser, updateUser as updateUserInDb, propagateDisplayNameToParticipations } from './database';
 import { User, CreateUserData } from '@/types';
 
 // Auth state management
@@ -133,11 +133,27 @@ export const registerAttendee = async (
 // Update user profile (for onboarding and profile editing)
 export const updateUser = async (userId: string, updates: Partial<User>): Promise<void> => {
   try {
-    await updateUserInDb(userId, updates);
+    // Filter out undefined values from updates
+    const cleanUpdates: any = {};
+    for (const [key, value] of Object.entries(updates)) {
+      if (value !== undefined) {
+        cleanUpdates[key] = value;
+      }
+    }
     
-    // If displayName is being updated, also update Firebase Auth profile
+    await updateUserInDb(userId, cleanUpdates);
+    
+    // If displayName is being updated, also update Firebase Auth profile and propagate to participations
     if (updates.displayName && auth.currentUser) {
       await updateProfile(auth.currentUser, { displayName: updates.displayName });
+      
+      // Propagate display name to all event participations
+      try {
+        await propagateDisplayNameToParticipations(userId, updates.displayName);
+      } catch (error) {
+        console.error('Warning: Failed to propagate display name to participations:', error);
+        // Don't throw error to avoid breaking the profile update
+      }
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to update user';

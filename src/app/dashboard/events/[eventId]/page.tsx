@@ -26,15 +26,17 @@ import {
   EyeOff
 } from 'lucide-react';
 import QRCodeReact from 'react-qr-code';
-import { getEvent, getAllEventPosts } from '@/lib/database';
+import { getEvent, getAllEventPosts, deleteEvent } from '@/lib/database';
 import { downloadPhoto, downloadAllPhotos } from '@/lib/download-utils';
 import { Event, Post } from '@/types';
+import { useRouter } from 'next/navigation';
 
 interface PageProps {
   params: Promise<{ eventId: string }>;
 }
 
 export default function EventDetailsPage({ params }: PageProps) {
+  const router = useRouter();
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'qr' | 'album' | 'settings'>('overview');
@@ -46,6 +48,9 @@ export default function EventDetailsPage({ params }: PageProps) {
   const [albumLoading, setAlbumLoading] = useState(false);
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [downloadingAll, setDownloadingAll] = useState(false);
+  
+  // Delete event states
+  const [isDeleting, setIsDeleting] = useState(false);
 
   useEffect(() => {
     const loadEventId = async () => {
@@ -110,9 +115,11 @@ export default function EventDetailsPage({ params }: PageProps) {
     try {
       const posts = await getAllEventPosts(event.id);
       setAllPosts(posts);
-      console.log(`📸 Loaded ${posts.length} posts for album`);
+      console.log(`📸 Loaded ${posts.length} posts for album (including pending)`);
+      console.log('📋 Posts data:', posts);
     } catch (error) {
       console.error('Error loading album data:', error);
+      alert('Failed to load album photos. Please try refreshing the page.');
     } finally {
       setAlbumLoading(false);
     }
@@ -123,17 +130,98 @@ export default function EventDetailsPage({ params }: PageProps) {
     
     const eventUrl = `${window.location.origin}/event/${event.eventUrl}`;
     try {
-      await navigator.clipboard.writeText(eventUrl);
+      // Try modern clipboard API first
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(eventUrl);
+      } else {
+        // Fallback for older browsers or non-secure contexts
+        const textArea = document.createElement('textarea');
+        textArea.value = eventUrl;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-9999px';
+        textArea.style.top = '-9999px';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+      }
+      
       setCopySuccess(true);
       setTimeout(() => setCopySuccess(false), 2000);
     } catch (error) {
       console.error('Failed to copy URL:', error);
+      // Show user-friendly error message
+      alert('Failed to copy URL. Please manually copy: ' + eventUrl);
     }
   };
 
-  const handleCopyQR = () => {
-    // You could implement QR code download here
-    console.log('Download QR code functionality would go here');
+  const handleDownloadQR = () => {
+    if (!event) return;
+
+    try {
+      // Get the QR code SVG element
+      const qrContainer = document.querySelector('[data-qr-container]');
+      const qrElement = qrContainer?.querySelector('svg') as SVGElement;
+      if (!qrElement) {
+        console.error('QR Code element not found');
+        alert('QR Code not found. Please make sure the QR code is displayed.');
+        return;
+      }
+
+      // Create a canvas to convert SVG to image
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Set canvas size
+      canvas.width = 400;
+      canvas.height = 400;
+
+      // Create an image from the SVG
+      const svgData = new XMLSerializer().serializeToString(qrElement);
+      const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+      const svgUrl = URL.createObjectURL(svgBlob);
+
+      const img = new Image();
+      img.onload = () => {
+        // Fill white background
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw QR code
+        ctx.drawImage(img, 50, 50, 300, 300);
+        
+        // Add event title below QR code
+        ctx.fillStyle = 'black';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText(event.title, canvas.width / 2, 370);
+        ctx.font = '12px Arial';
+        ctx.fillText('Scan to join event', canvas.width / 2, 390);
+
+        // Download the image
+        canvas.toBlob((blob) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${event.title.replace(/[^a-zA-Z0-9]/g, '_')}_QR_Code.png`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }
+        }, 'image/png');
+
+        URL.revokeObjectURL(svgUrl);
+      };
+
+      img.src = svgUrl;
+    } catch (error) {
+      console.error('Error downloading QR code:', error);
+      alert('Failed to download QR code. Please try again.');
+    }
   };
 
   // ✅ UPDATED: Better download function with CORS handling
@@ -188,6 +276,38 @@ export default function EventDetailsPage({ params }: PageProps) {
       setSelectedPosts(new Set());
     } else {
       setSelectedPosts(new Set(allPosts.map(post => post.id)));
+    }
+  };
+
+  const handleDeleteEvent = async () => {
+    if (!event || !eventId) return;
+
+    // Show confirmation dialog
+    const confirmed = window.confirm(
+      `Are you sure you want to delete "${event.title}"?\n\n` +
+      'This will permanently delete:\n' +
+      `• The event and all its settings\n` +
+      `• All ${event.stats.totalParticipants} participants\n` +
+      `• All ${event.stats.totalPosts} photos and posts\n` +
+      `• All ${event.stats.totalComments} comments\n\n` +
+      'This action cannot be undone!'
+    );
+
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    try {
+      await deleteEvent(eventId);
+      
+      // Show success message and redirect
+      alert('Event deleted successfully!');
+      router.push('/dashboard');
+    } catch (error) {
+      console.error('Error deleting event:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to delete event';
+      alert(`Error deleting event: ${errorMessage}`);
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -510,17 +630,19 @@ export default function EventDetailsPage({ params }: PageProps) {
                   <div className="grid md:grid-cols-2 gap-8">
                     <div>
                       <div className="bg-white border-2 border-gray-200 rounded-lg p-8 text-center">
-                        <QRCodeReact
-                          value={eventUrl}
-                          size={200}
-                          style={{ margin: '0 auto' }}
-                        />
+                        <div data-qr-container>
+                          <QRCodeReact
+                            value={eventUrl}
+                            size={200}
+                            style={{ margin: '0 auto' }}
+                          />
+                        </div>
                         <p className="text-sm mt-4" style={{color: '#6B7280'}}>
                           Attendees scan this QR code to join the event
                         </p>
                       </div>
                       <button
-                        onClick={handleCopyQR}
+                        onClick={handleDownloadQR}
                         className="w-full mt-4 text-white px-4 py-2 rounded-lg transition-colors hover:opacity-90"
                         style={{backgroundColor: '#6C63FF'}}
                       >
@@ -580,6 +702,19 @@ export default function EventDetailsPage({ params }: PageProps) {
                   </div>
                   
                   <div className="flex items-center space-x-3">
+                    <button
+                      onClick={loadAlbumData}
+                      disabled={albumLoading}
+                      className="text-sm font-medium transition-colors hover:opacity-80 flex items-center"
+                      style={{color: '#6B7280'}}
+                      title="Refresh album"
+                    >
+                      <svg className={`h-4 w-4 mr-1 ${albumLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Refresh
+                    </button>
+                    
                     {allPosts.length > 0 && (
                       <>
                         <button
@@ -634,7 +769,27 @@ export default function EventDetailsPage({ params }: PageProps) {
                           src={post.imageUrl} 
                           alt={post.caption || 'Event photo'}
                           className="w-full h-48 object-cover"
+                          onError={(e) => {
+                            console.error('Failed to load image:', post.imageUrl);
+                            const target = e.target as HTMLImageElement;
+                            target.style.display = 'none';
+                            const placeholder = target.nextElementSibling as HTMLElement;
+                            if (placeholder) placeholder.style.display = 'flex';
+                          }}
+                          onLoad={() => {
+                            console.log('Successfully loaded image:', post.id);
+                          }}
                         />
+                        {/* Error placeholder */}
+                        <div 
+                          className="w-full h-48 bg-gray-200 flex items-center justify-center text-gray-500" 
+                          style={{display: 'none'}}
+                        >
+                          <div className="text-center">
+                            <ImageIcon className="h-8 w-8 mx-auto mb-2" />
+                            <p className="text-xs">Image failed to load</p>
+                          </div>
+                        </div>
                         
                         {/* Selection indicator */}
                         <div className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
@@ -649,9 +804,21 @@ export default function EventDetailsPage({ params }: PageProps) {
                           )}
                         </div>
 
+                        {/* Download button - always visible */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDownloadPhoto(post.imageUrl, `${event.title.replace(/[^a-zA-Z0-9]/g, '_')}-photo-${post.id}.jpg`);
+                          }}
+                          className="absolute top-2 right-2 p-2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full transition-all hover:scale-110"
+                          title="Download image"
+                        >
+                          <Download className="h-4 w-4" />
+                        </button>
+
                         {/* Approval status */}
                         {!post.isApproved && (
-                          <div className="absolute top-2 right-2 px-2 py-1 text-xs rounded-full text-white" style={{backgroundColor: '#FF9F1C'}}>
+                          <div className="absolute top-2 left-2 px-2 py-1 text-xs rounded-full text-white" style={{backgroundColor: '#FF9F1C'}}>
                             Pending
                           </div>
                         )}
@@ -764,10 +931,19 @@ export default function EventDetailsPage({ params }: PageProps) {
                       Permanently delete this event and all associated data. This action cannot be undone.
                     </p>
                     <button 
-                      className="text-white px-4 py-2 rounded-lg transition-colors hover:opacity-90"
+                      onClick={handleDeleteEvent}
+                      disabled={isDeleting}
+                      className="text-white px-4 py-2 rounded-lg transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                       style={{backgroundColor: '#EF4444'}}
                     >
-                      Delete Event
+                      {isDeleting ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Deleting...
+                        </>
+                      ) : (
+                        'Delete Event'
+                      )}
                     </button>
                   </div>
                 </div>
