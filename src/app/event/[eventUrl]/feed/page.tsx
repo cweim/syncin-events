@@ -21,7 +21,8 @@ import {
   getParticipantByUser, 
   getEventPosts,
   createComment,
-  getPostComments
+  getPostComments,
+  getUser
 } from '@/lib/database';
 import { downloadPhoto } from '@/lib/download-utils';
 import { getCurrentFirebaseUser } from '@/lib/auth';
@@ -43,11 +44,17 @@ interface PageProps {
   params: Promise<{ eventUrl: string }>;
 }
 
+interface EnhancedComment extends Comment {
+  authorDisplayName?: string;
+  authorProfilePicUrl?: string;
+}
+
 interface PostWithInteractions extends Post {
   userHasLiked: boolean;
-  comments: Comment[];
+  comments: EnhancedComment[];
   likes: string[]; // Array of user IDs who liked the post
   authorProfilePicUrl?: string; // Author's profile photo
+  authorDisplayName?: string; // Author's display name
 }
 
 // Utility to safely convert Firestore Timestamp or Date-like to Date
@@ -175,17 +182,60 @@ export default function EventFeedPage({ params }: PageProps) {
           const likesArray = Array.isArray(data.likes) ? data.likes : [];
           const userHasLiked = likesArray.includes(userId);
           
-          // Get comments for this post
+          // Get comments for this post with user data
           let comments: Comment[] = [];
           try {
             comments = await getPostComments(docSnap.id);
-            comments = comments.map(comment => ({
-              ...comment,
-              createdAt: toDateSafe(comment.createdAt)
-            }));
+            // Enhance comments with user data
+            const enhancedComments = await Promise.all(
+              comments.map(async (comment) => {
+                let commentAuthorName = 'Event Attendee';
+                let commentAuthorProfilePic = '';
+                
+                try {
+                  const commentParticipant = await getParticipantByUser(eventId, comment.userId);
+                  if (commentParticipant) {
+                    commentAuthorName = commentParticipant.displayName || 'Event Attendee';
+                    const commentUser = await getUser(comment.userId);
+                    if (commentUser) {
+                      commentAuthorProfilePic = commentUser.profilePhotoUrl || '';
+                    }
+                  }
+                } catch (error) {
+                  console.log('👤 Could not load comment author data:', comment.id);
+                }
+
+                return {
+                  ...comment,
+                  createdAt: toDateSafe(comment.createdAt),
+                  authorDisplayName: commentAuthorName,
+                  authorProfilePicUrl: commentAuthorProfilePic
+                };
+              })
+            );
+            comments = enhancedComments;
           } catch (commentError) {
             console.log('📝 Could not load comments for post:', docSnap.id);
             comments = [];
+          }
+
+          // ✅ Get author user data and participant data for profile info
+          let authorDisplayName = 'Event Attendee';
+          let authorProfilePicUrl = '';
+          
+          try {
+            // Get participant data for this post's author
+            const authorParticipant = await getParticipantByUser(eventId, data.userId);
+            if (authorParticipant) {
+              authorDisplayName = authorParticipant.displayName || 'Event Attendee';
+              // Get user data for profile photo
+              const authorUser = await getUser(data.userId);
+              if (authorUser) {
+                authorProfilePicUrl = authorUser.profilePhotoUrl || '';
+              }
+            }
+          } catch (error) {
+            console.log('👤 Could not load author data for post:', docSnap.id);
           }
 
           // ✅ Convert post data with proper timestamp handling
@@ -211,7 +261,9 @@ export default function EventFeedPage({ params }: PageProps) {
             userHasLiked,
             comments,
             likes: likesArray,
-            authorProfilePicUrl: data.authorProfilePicUrl || ''
+            authorProfilePicUrl,
+            // Add author display name for easier access
+            authorDisplayName
           };
 
           updatedPosts.push(postData);
@@ -262,7 +314,29 @@ export default function EventFeedPage({ params }: PageProps) {
 
   const formatPostDateTime = (createdAt: Date | any) => {
     try {
-      const date = createdAt?.toDate ? createdAt.toDate() : new Date(createdAt);
+      // Handle different date formats more reliably
+      let date: Date;
+      
+      if (createdAt && typeof createdAt.toDate === 'function') {
+        // Firestore Timestamp
+        date = createdAt.toDate();
+      } else if (createdAt instanceof Date) {
+        // Already a Date object
+        date = createdAt;
+      } else if (typeof createdAt === 'string' || typeof createdAt === 'number') {
+        // String or number timestamp
+        date = new Date(createdAt);
+      } else {
+        console.warn('Unknown date format:', createdAt);
+        date = new Date(); // fallback to current time
+      }
+
+      // Validate the date
+      if (isNaN(date.getTime())) {
+        console.warn('Invalid date:', createdAt);
+        date = new Date(); // fallback to current time
+      }
+
       return {
         time: date.toLocaleTimeString("en-US", {
           hour: "numeric",
@@ -276,10 +350,10 @@ export default function EventFeedPage({ params }: PageProps) {
         }),
       };
     } catch (error) {
-      console.error('Error formatting post date time:', error);
+      console.error('Error formatting post date time:', error, createdAt);
       return {
-        time: "",
-        date: ""
+        time: "Unknown",
+        date: "Unknown"
       };
     }
   };
@@ -427,7 +501,7 @@ export default function EventFeedPage({ params }: PageProps) {
             className="flex items-center flex-1"
           >
             <div className="w-9 h-9 rounded-full flex items-center justify-center mr-3" style={{backgroundColor: '#EDE9FE'}}>
-              {/* ✅ Profile photo with fallback to initials (like React Native) */}
+              {/* ✅ Profile photo with fallback to initials */}
               {post.authorProfilePicUrl ? (
                 <img 
                   src={post.authorProfilePicUrl}
@@ -436,16 +510,13 @@ export default function EventFeedPage({ params }: PageProps) {
                 />
               ) : (
                 <span className="text-white font-semibold" style={{color: '#6C63FF'}}>
-                  {post.userId === currentUser?.uid 
-                    ? getUserInitials(participant.displayName)
-                    : getUserInitials('Event Attendee')
-                  }
+                  {getUserInitials(post.authorDisplayName || 'Event Attendee')}
                 </span>
               )}
             </div>
             <div className="flex-1 text-left">
               <p className="text-base font-semibold" style={{color: '#111827'}}>
-                {post.userId === currentUser?.uid ? participant.displayName : 'Event Attendee'}
+                {post.authorDisplayName || 'Event Attendee'}
               </p>
               <p className="text-xs" style={{color: '#6B7280'}}>SyncIn • {event.location}</p>
             </div>
@@ -534,14 +605,32 @@ export default function EventFeedPage({ params }: PageProps) {
                 {post.comments.map((comment) => (
                   <div key={comment.id} className="mb-3 last:mb-0">
                     <div className="flex items-start space-x-2">
-                      <div className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0" style={{backgroundColor: '#EDE9FE'}}>
-                        <User className="h-3 w-3" style={{color: '#6C63FF'}} />
-                      </div>
+                      <button
+                        onClick={() => handleProfilePress(comment.userId)}
+                        className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
+                        style={{backgroundColor: '#EDE9FE'}}
+                      >
+                        {comment.authorProfilePicUrl ? (
+                          <img 
+                            src={comment.authorProfilePicUrl}
+                            alt="Profile"
+                            className="w-6 h-6 rounded-full object-cover"
+                          />
+                        ) : (
+                          <span className="text-xs font-semibold" style={{color: '#6C63FF'}}>
+                            {getUserInitials(comment.authorDisplayName || 'Event Attendee')}
+                          </span>
+                        )}
+                      </button>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm">
-                          <span className="font-medium" style={{color: '#111827'}}>
-                            {comment.participantId === participant.id ? participant.displayName : 'Event Attendee'}
-                          </span>
+                          <button
+                            onClick={() => handleProfilePress(comment.userId)}
+                            className="font-medium hover:underline"
+                            style={{color: '#111827'}}
+                          >
+                            {comment.authorDisplayName || 'Event Attendee'}
+                          </button>
                           <span className="ml-2" style={{color: '#374151'}}>{comment.content}</span>
                         </p>
                         <p className="text-xs mt-1" style={{color: '#9CA3AF'}}>
