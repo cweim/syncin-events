@@ -6,14 +6,14 @@ import { getAuth, connectAuthEmulator } from 'firebase/auth';
 import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore';
 import { getStorage, connectStorageEmulator } from 'firebase/storage';
 
-// Firebase configuration - using hardcoded values temporarily
+// Firebase configuration - using environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyDRsxY4IxKKupGur94xkSQzSQ4QaU3t0Yw",
-  authDomain: "syncin-event.firebaseapp.com",
-  projectId: "syncin-event",
-  storageBucket: "syncin-event.firebasestorage.app", // Updated to use appspot.com domain
-  messagingSenderId: "807585441723",
-  appId: "1:807585441723:web:9204365dffcd7b6b47c69e"
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
 console.log('🔥 Firebase initialized with project:', firebaseConfig.projectId);
