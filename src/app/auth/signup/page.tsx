@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Camera, Mail, Eye, EyeOff, ArrowLeft, Check } from 'lucide-react';
@@ -11,7 +11,7 @@ import { registerAttendee, getCurrentFirebaseUser } from '@/lib/auth';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
-export default function SignUpPage() {
+function SignUpPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
@@ -85,7 +85,7 @@ export default function SignUpPage() {
 
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, provider);
       
       // TODO: Check if this is a new user and redirect to onboarding
       // For now, redirect to onboarding to complete profile
@@ -281,7 +281,7 @@ export default function SignUpPage() {
                         <span className="text-xs" style={{color: '#22C55E'}}>Passwords match</span>
                       </>
                     ) : (
-                      <span className="text-xs" style={{color: '#EF4444'}}>Passwords don't match</span>
+                      <span className="text-xs" style={{color: '#EF4444'}}>Passwords don&apos;t match</span>
                     )}
                   </div>
                 )}
@@ -335,5 +335,13 @@ export default function SignUpPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function SignUpPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <SignUpPageContent />
+    </Suspense>
   );
 }

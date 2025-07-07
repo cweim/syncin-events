@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Camera, Mail, Eye, EyeOff, ArrowLeft } from 'lucide-react';
@@ -11,7 +11,7 @@ import { signInOrganizer, getCurrentFirebaseUser } from '@/lib/auth';
 import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth } from '@/lib/firebase';
 
-export default function SignInPage() {
+function SignInPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
@@ -65,7 +65,7 @@ export default function SignInPage() {
 
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
+      await signInWithPopup(auth, provider);
       
       // TODO: Check if this is a new user and redirect to onboarding
       // For now, redirect to the intended destination
@@ -212,7 +212,7 @@ export default function SignInPage() {
             {/* Sign Up Link */}
             <div className="mt-6 text-center">
               <p className="text-sm" style={{color: '#6B7280'}}>
-                Don't have an account?{' '}
+                Don&apos;t have an account?{' '}
                 <Link 
                   href={`/auth/signup${redirectUrl ? `?redirect=${encodeURIComponent(redirectUrl)}` : ''}`}
                   className="font-medium hover:underline"
@@ -237,5 +237,13 @@ export default function SignInPage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <SignInPageContent />
+    </Suspense>
   );
 }

@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { 
   ArrowLeft,
@@ -22,7 +22,7 @@ import {
 } from '@/lib/database';
 import { User as UserType, EventParticipant, Post, Event } from '@/types';
 
-export default function UserProfilePage() {
+function UserProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -312,5 +312,13 @@ export default function UserProfilePage() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function UserProfilePage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <UserProfilePageContent />
+    </Suspense>
   );
 }

@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { 
@@ -27,7 +27,7 @@ interface PageProps {
   params: Promise<{ eventUrl: string }>;
 }
 
-export default function EventCaptionPage({ params }: PageProps) {
+function EventCaptionPageContent({ params }: PageProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
   
@@ -455,5 +455,13 @@ export default function EventCaptionPage({ params }: PageProps) {
         </div>
       )}
     </div>
+  );
+}
+
+export default function EventCaptionPage({ params }: PageProps) {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <EventCaptionPageContent params={params} />
+    </Suspense>
   );
 }
