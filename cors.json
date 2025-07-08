@@ -1,0 +1,29 @@
+[
+  {
+    "origin": [
+      "http://localhost:3000",
+      "http://localhost:3001",
+      "http://localhost:3002",
+      "http://127.0.0.1:3000",
+      "http://127.0.0.1:3001",
+      "http://127.0.0.1:3002",
+      "https://localhost:3000",
+      "https://localhost:3001",
+      "https://localhost:3002"
+    ],
+    "method": ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Access-Control-Allow-Origin", "Access-Control-Allow-Headers"]
+  },
+  {
+    "origin": [
+      "https://syncin-events.vercel.app",
+      "https://syncin-events-git-main-chinweimings-projects.vercel.app",
+      "https://syncin-events-chinweimings-projects.vercel.app",
+      "https://*.vercel.app"
+    ],
+    "method": ["GET", "HEAD", "POST", "PUT", "DELETE", "OPTIONS"],
+    "maxAgeSeconds": 3600,
+    "responseHeader": ["Content-Type", "Access-Control-Allow-Origin", "Access-Control-Allow-Headers"]
+  }
+]

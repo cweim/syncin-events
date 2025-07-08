@@ -113,12 +113,44 @@ export default function EventDetailsPage({ params }: PageProps) {
     
     setAlbumLoading(true);
     try {
+      console.log('🔄 Loading album data for event:', event.id);
       const posts = await getAllEventPosts(event.id);
       setAllPosts(posts);
       console.log(`📸 Loaded ${posts.length} posts for album (including pending)`);
-      console.log('📋 Posts data:', posts);
+      console.log('📋 Posts data sample:', posts.slice(0, 2));
+      
+      // Debug image URLs
+      const postsWithImages = posts.filter(p => p.imageUrl);
+      const postsWithoutImages = posts.filter(p => !p.imageUrl);
+      console.log(`🖼️ Posts with images: ${postsWithImages.length}, without images: ${postsWithoutImages.length}`);
+      
+      if (postsWithImages.length > 0) {
+        console.log('🔍 Sample image URL:', postsWithImages[0].imageUrl);
+        
+        // Test if we can fetch the image directly
+        const testImageUrl = postsWithImages[0].imageUrl;
+        fetch(testImageUrl, { method: 'HEAD' })
+          .then(response => {
+            console.log('🌐 Direct image fetch test:', {
+              status: response.status,
+              ok: response.ok,
+              headers: {
+                'content-type': response.headers.get('content-type'),
+                'content-length': response.headers.get('content-length'),
+                'access-control-allow-origin': response.headers.get('access-control-allow-origin')
+              }
+            });
+          })
+          .catch(error => {
+            console.log('❌ Direct image fetch failed:', error);
+          });
+      }
+      
+      if (postsWithoutImages.length > 0) {
+        console.log('⚠️ Posts without image URLs:', postsWithoutImages.map(p => p.id));
+      }
     } catch (error) {
-      console.error('Error loading album data:', error);
+      console.error('❌ Error loading album data:', error);
       alert('Failed to load album photos. Please try refreshing the page.');
     } finally {
       setAlbumLoading(false);
@@ -768,26 +800,65 @@ export default function EventDetailsPage({ params }: PageProps) {
                         <img 
                           src={post.imageUrl} 
                           alt={post.caption || 'Event photo'}
-                          className="w-full h-48 object-cover"
+                          className="w-full h-48"
+                          style={{
+                            backgroundColor: '#f3f4f6', // Light gray background to see if image loads
+                            minHeight: '192px', // Ensure proper height
+                            objectFit: 'cover', // Explicit object-fit instead of class
+                            display: 'block' // Ensure proper display
+                          }}
                           onError={(e) => {
-                            console.error('Failed to load image:', post.imageUrl);
+                            console.error('❌ Image failed to load:', {
+                              url: post.imageUrl,
+                              postId: post.id,
+                              userId: post.userId,
+                              error: e.type,
+                              timestamp: new Date().toISOString()
+                            });
                             const target = e.target as HTMLImageElement;
                             target.style.display = 'none';
                             const placeholder = target.nextElementSibling as HTMLElement;
                             if (placeholder) placeholder.style.display = 'flex';
                           }}
-                          onLoad={() => {
-                            console.log('Successfully loaded image:', post.id);
+                          onLoad={(e) => {
+                            const img = e.target as HTMLImageElement;
+                            console.log('✅ Image loaded successfully:', {
+                              postId: post.id,
+                              naturalWidth: img.naturalWidth,
+                              naturalHeight: img.naturalHeight,
+                              displayWidth: img.width,
+                              displayHeight: img.height,
+                              url: post.imageUrl
+                            });
+                            
+                            // Visual test: add a colored border when image loads
+                            img.style.border = '2px solid green';
+                            setTimeout(() => {
+                              img.style.border = '';
+                            }, 2000);
                           }}
                         />
                         {/* Error placeholder */}
                         <div 
-                          className="w-full h-48 bg-gray-200 flex items-center justify-center text-gray-500" 
+                          className="w-full h-48 bg-red-100 flex items-center justify-center text-red-600 border border-red-300" 
                           style={{display: 'none'}}
                         >
                           <div className="text-center">
                             <ImageIcon className="h-8 w-8 mx-auto mb-2" />
-                            <p className="text-xs">Image failed to load</p>
+                            <p className="text-xs font-medium">Image failed to load</p>
+                            <p className="text-xs opacity-75 mt-1">Check console for details</p>
+                          </div>
+                        </div>
+                        
+                        {/* Loading placeholder for debugging */}
+                        <div 
+                          className="absolute inset-0 bg-blue-50 flex items-center justify-center text-blue-600"
+                          style={{display: 'none'}}
+                          id={`loading-${post.id}`}
+                        >
+                          <div className="text-center">
+                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                            <p className="text-xs">Loading image...</p>
                           </div>
                         </div>
                         
@@ -823,8 +894,8 @@ export default function EventDetailsPage({ params }: PageProps) {
                           </div>
                         )}
 
-                        {/* Overlay with post info */}
-                        <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-all duration-200 flex items-end">
+                        {/* Overlay with post info - Fixed: removed bg-black when not needed */}
+                        <div className="absolute inset-0 group-hover:bg-black group-hover:bg-opacity-60 transition-all duration-200 flex items-end">
                           <div className="p-3 text-white opacity-0 group-hover:opacity-100 transition-opacity duration-200 w-full">
                             {post.caption && (
                               <p className="text-sm mb-2 line-clamp-2">{post.caption}</p>

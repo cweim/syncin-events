@@ -7,14 +7,18 @@ import { Post } from '@/types';
 export const downloadPhoto = async (imageUrl: string, filename: string = 'photo.jpg'): Promise<void> => {
   try {
     console.log('📥 Attempting to download:', filename);
+    console.log('🔗 Image URL:', imageUrl);
     
-    // Method 1: Try direct download first (works in production)
+    // Method 1: Try direct download first (works when CORS is properly configured)
     try {
       const response = await fetch(imageUrl, {
         method: 'GET',
         mode: 'cors',
         cache: 'no-cache',
         credentials: 'omit',
+        headers: {
+          'Accept': 'image/*,*/*',
+        }
       });
       
       if (response.ok) {
@@ -32,23 +36,82 @@ export const downloadPhoto = async (imageUrl: string, filename: string = 'photo.
         window.URL.revokeObjectURL(url);
         console.log('✅ Photo downloaded successfully:', filename);
         return;
+      } else {
+        console.log(`❌ HTTP ${response.status}: ${response.statusText}`);
       }
     } catch (corsError) {
-      console.log('🔄 Direct download failed, trying alternative method...');
+      console.log('🔄 Direct download failed, trying alternative method...', corsError);
     }
     
-    // Method 2: Alternative approach for localhost/development
-    // Create a temporary link that opens in new tab (user can save from there)
+    // Method 2: Use proxy/server-side download or convert to base64
+    try {
+      console.log('🔄 Trying base64 conversion method...');
+      
+      // Try to load image as base64 and download
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      
+      const imageLoadPromise = new Promise<void>((resolve, reject) => {
+        img.onload = () => {
+          try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            
+            if (ctx) {
+              ctx.drawImage(img, 0, 0);
+              canvas.toBlob((blob) => {
+                if (blob) {
+                  const url = window.URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.download = filename;
+                  link.style.display = 'none';
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                  window.URL.revokeObjectURL(url);
+                  console.log('✅ Downloaded via canvas conversion');
+                  resolve();
+                } else {
+                  reject(new Error('Failed to create blob'));
+                }
+              }, 'image/jpeg', 0.95);
+            } else {
+              reject(new Error('Failed to get canvas context'));
+            }
+          } catch (canvasError) {
+            reject(canvasError);
+          }
+        };
+        
+        img.onerror = () => reject(new Error('Failed to load image for conversion'));
+      });
+      
+      img.src = imageUrl;
+      await imageLoadPromise;
+      return;
+      
+    } catch (conversionError) {
+      console.log('🔄 Canvas conversion failed, using fallback method...', conversionError);
+    }
+    
+    // Method 3: Final fallback - open in new tab
     const link = document.createElement('a');
     link.href = imageUrl;
     link.download = filename;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
     
-    // For better UX, we can copy the URL to clipboard as backup
-    if (navigator.clipboard) {
-      await navigator.clipboard.writeText(imageUrl);
-      console.log('📋 Image URL copied to clipboard as backup');
+    // Copy URL to clipboard as backup
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(imageUrl);
+        console.log('📋 Image URL copied to clipboard as backup');
+      }
+    } catch (clipboardError) {
+      console.log('📋 Clipboard not available, skipping backup');
     }
     
     document.body.appendChild(link);
@@ -56,22 +119,22 @@ export const downloadPhoto = async (imageUrl: string, filename: string = 'photo.
     document.body.removeChild(link);
     
     // Show user-friendly message
-    alert('Image opened in new tab. Right-click and "Save Image As..." to download. URL has been copied to clipboard as backup.');
+    alert('Image opened in new tab. Right-click and "Save Image As..." to download.');
     
   } catch (error) {
     console.error('❌ Error downloading photo:', error);
     
-    // Fallback: Copy URL to clipboard
+    // Fallback: Copy URL to clipboard or show URL
     try {
-      if (navigator.clipboard) {
+      if (navigator.clipboard && window.isSecureContext) {
         await navigator.clipboard.writeText(imageUrl);
-        alert('Unable to download directly. Image URL copied to clipboard - you can paste it in a new tab to view/save the image.');
+        alert('Unable to download directly due to browser security restrictions. Image URL copied to clipboard - paste it in a new tab to view/save the image.');
       } else {
         // Final fallback: show URL in prompt for manual copy
         prompt('Unable to download directly. Copy this URL to view/save the image:', imageUrl);
       }
     } catch (clipboardError) {
-      console.error('Clipboard access failed:', clipboardError);
+      console.log('Clipboard access failed, using prompt fallback');
       prompt('Unable to download directly. Copy this URL to view/save the image:', imageUrl);
     }
   }

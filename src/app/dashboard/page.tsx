@@ -91,9 +91,75 @@ export default function DashboardPage() {
     }
   };
 
+  // Date validation functions
+  const validateDates = (startDate: string, endDate: string): string | null => {
+    if (!startDate || !endDate) {
+      return 'Both start and end dates are required';
+    }
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    // Check if dates are valid
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+      return 'Please enter valid dates';
+    }
+
+    // Check if start date is in the past (must be after current time)
+    const now = new Date();
+    if (start < now) {
+      return 'Event start time must be in the future';
+    }
+
+    // Check if end date is before start date
+    if (end < start) {
+      return 'Event end date must be after start date';
+    }
+
+    // Allow same day events by checking if end is at least same time as start
+    if (end.getTime() === start.getTime()) {
+      return 'Event end time must be after start time';
+    }
+
+    return null; // No validation errors
+  };
+
   const handleInputChange = (field: keyof EventFormData, value: string | File | null) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-    setError(''); // Clear errors when user makes changes
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+      
+      // Auto-validate dates when either date field changes
+      if (field === 'startDate' || field === 'endDate') {
+        const startDate = field === 'startDate' ? value as string : prev.startDate;
+        const endDate = field === 'endDate' ? value as string : prev.endDate;
+        
+        // If both dates are filled, validate them
+        if (startDate && endDate) {
+          const dateError = validateDates(startDate, endDate);
+          if (dateError) {
+            setError(dateError);
+          } else {
+            setError(''); // Clear error if dates are valid
+          }
+        }
+        
+        // Auto-set minimum end date when start date changes
+        if (field === 'startDate' && value && !endDate) {
+          // Set end date to same day, 1 hour later
+          const startDateTime = new Date(value as string);
+          startDateTime.setHours(startDateTime.getHours() + 1);
+          const defaultEndDate = startDateTime.toISOString().slice(0, 16);
+          newData.endDate = defaultEndDate;
+        }
+      }
+      
+      return newData;
+    });
+    
+    // Clear general errors when user makes changes (but keep date-specific errors)
+    if (field !== 'startDate' && field !== 'endDate') {
+      setError('');
+    }
   };
 
   const handleCoverPhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -250,6 +316,14 @@ export default function DashboardPage() {
 
     try {
       console.log('🚀 Starting event creation process...');
+      
+      // Validate dates first
+      const dateError = validateDates(formData.startDate, formData.endDate);
+      if (dateError) {
+        setError(dateError);
+        setIsSubmitting(false);
+        return;
+      }
       
       // Validate that we have at least one non-empty prompt
       const validPrompts = formData.prompts.filter(prompt => prompt.question.trim() !== '');
@@ -694,6 +768,7 @@ export default function DashboardPage() {
                     type="datetime-local"
                     required
                     value={formData.startDate}
+                    min={new Date().toISOString().slice(0, 16)} // Prevent past dates
                     onChange={(e) => handleInputChange('startDate', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     style={{color: '#111827'}}
@@ -708,10 +783,31 @@ export default function DashboardPage() {
                     type="datetime-local"
                     required
                     value={formData.endDate}
+                    min={formData.startDate || new Date().toISOString().slice(0, 16)} // Dynamic min based on start date
                     onChange={(e) => handleInputChange('endDate', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                     style={{color: '#111827'}}
                   />
+                  {formData.startDate && formData.endDate && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Duration: {(() => {
+                        const start = new Date(formData.startDate);
+                        const end = new Date(formData.endDate);
+                        const diffMs = end.getTime() - start.getTime();
+                        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                        const diffDays = Math.floor(diffHours / 24);
+                        const remainingHours = diffHours % 24;
+                        
+                        if (diffDays > 0) {
+                          return remainingHours > 0 
+                            ? `${diffDays} day${diffDays > 1 ? 's' : ''} and ${remainingHours} hour${remainingHours > 1 ? 's' : ''}`
+                            : `${diffDays} day${diffDays > 1 ? 's' : ''}`;
+                        } else {
+                          return `${diffHours} hour${diffHours > 1 ? 's' : ''}`;
+                        }
+                      })()}
+                    </p>
+                  )}
                 </div>
               </div>
 
