@@ -96,10 +96,6 @@ export default function PricingPage() {
                   <Check className="h-5 w-5 text-green-500 mr-3" />
                   <span className="text-gray-700">SyncIn watermark branding</span>
                 </li>
-                <li className="flex items-center">
-                  <Check className="h-5 w-5 text-green-500 mr-3" />
-                  <span className="text-gray-700">Optional 7-day media expiry</span>
-                </li>
               </ul>
               
               <Link
@@ -141,10 +137,6 @@ export default function PricingPage() {
                   <Download className="h-4 w-4 text-indigo-600 mr-2" />
                   <span className="text-gray-700">Photo exports</span>
                 </li>
-                <li className="flex items-center text-sm">
-                  <Palette className="h-4 w-4 text-indigo-600 mr-2" />
-                  <span className="text-gray-700">Custom branding</span>
-                </li>
               </ul>
               
               <button className="w-full border border-indigo-600 text-indigo-600 py-2 px-4 rounded-lg font-medium hover:bg-indigo-50 transition-colors">
@@ -173,10 +165,6 @@ export default function PricingPage() {
                   <Download className="h-4 w-4 text-indigo-600 mr-2" />
                   <span className="text-gray-700">Photo exports</span>
                 </li>
-                <li className="flex items-center text-sm">
-                  <Palette className="h-4 w-4 text-indigo-600 mr-2" />
-                  <span className="text-gray-700">Custom branding</span>
-                </li>
               </ul>
               
               <button className="w-full border border-indigo-600 text-indigo-600 py-2 px-4 rounded-lg font-medium hover:bg-indigo-50 transition-colors">
@@ -185,12 +173,7 @@ export default function PricingPage() {
             </div>
 
             {/* Pro */}
-            <div className="bg-white rounded-2xl shadow-sm border-2 border-indigo-600 p-6 relative">
-              <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-                <span className="bg-indigo-600 text-white px-3 py-1 rounded-full text-xs font-medium">
-                  Popular
-                </span>
-              </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
               
               <div className="text-center mb-6">
                 <h3 className="text-xl font-bold text-gray-900 mb-2">Pro</h3>
@@ -211,13 +194,9 @@ export default function PricingPage() {
                   <Download className="h-4 w-4 text-indigo-600 mr-2" />
                   <span className="text-gray-700">Photo exports</span>
                 </li>
-                <li className="flex items-center text-sm">
-                  <Palette className="h-4 w-4 text-indigo-600 mr-2" />
-                  <span className="text-gray-700">Custom branding</span>
-                </li>
               </ul>
               
-              <button className="w-full bg-indigo-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-indigo-700 transition-colors">
+              <button className="w-full border border-indigo-600 text-indigo-600 py-2 px-4 rounded-lg font-medium hover:bg-indigo-50 transition-colors">
                 Choose Pro
               </button>
             </div>
@@ -242,10 +221,6 @@ export default function PricingPage() {
                 <li className="flex items-center text-sm">
                   <Download className="h-4 w-4 text-indigo-600 mr-2" />
                   <span className="text-gray-700">Photo exports</span>
-                </li>
-                <li className="flex items-center text-sm">
-                  <Palette className="h-4 w-4 text-indigo-600 mr-2" />
-                  <span className="text-gray-700">Custom branding</span>
                 </li>
               </ul>
               
@@ -283,7 +258,7 @@ export default function PricingPage() {
                 </li>
                 <li className="flex items-center">
                   <Check className="h-5 w-5 text-green-500 mr-3" />
-                  <span className="text-gray-700">Custom branding</span>
+                  <span className="text-gray-700">1 reel generation per event</span>
                 </li>
                 <li className="flex items-center">
                   <Check className="h-5 w-5 text-green-500 mr-3" />
@@ -301,13 +276,7 @@ export default function PricingPage() {
             </div>
 
             {/* Pro */}
-            <div className="bg-white rounded-2xl shadow-lg border-2 border-indigo-600 p-8 relative">
-              <div className="absolute -top-3 left-1/2 transform -translate-x-1/2">
-                <span className="bg-indigo-600 text-white px-4 py-1 rounded-full text-sm font-medium flex items-center">
-                  <Star className="h-4 w-4 mr-1" />
-                  Most Popular
-                </span>
-              </div>
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-8">
               
               <div className="text-center mb-6">
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Pro</h3>
@@ -326,7 +295,7 @@ export default function PricingPage() {
                 </li>
                 <li className="flex items-center">
                   <Check className="h-5 w-5 text-green-500 mr-3" />
-                  <span className="text-gray-700">Custom branding</span>
+                  <span className="text-gray-700">3 reel generations per event</span>
                 </li>
                 <li className="flex items-center">
                   <Check className="h-5 w-5 text-green-500 mr-3" />
@@ -342,7 +311,7 @@ export default function PricingPage() {
                 </li>
               </ul>
               
-              <button className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 transition-colors">
+              <button className="w-full border border-indigo-600 text-indigo-600 py-3 px-6 rounded-lg font-semibold hover:bg-indigo-50 transition-colors">
                 Start Pro
               </button>
             </div>
@@ -366,7 +335,7 @@ export default function PricingPage() {
                 </li>
                 <li className="flex items-center">
                   <Check className="h-5 w-5 text-green-500 mr-3" />
-                  <span className="text-gray-700">Custom branding</span>
+                  <span className="text-gray-700">5 reel generations per event</span>
                 </li>
                 <li className="flex items-center">
                   <Check className="h-5 w-5 text-green-500 mr-3" />

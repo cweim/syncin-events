@@ -53,7 +53,7 @@ export default function EventDetailsPage({ params }: PageProps) {
   // Reels tab states
   const [selectedPhotosForReel, setSelectedPhotosForReel] = useState<Set<string>>(new Set());
   const [reelStyle, setReelStyle] = useState<'trendy' | 'elegant' | 'energetic'>('trendy');
-  const [reelDuration, setReelDuration] = useState<15 | 30 | 60>(30);
+  const [reelDuration, setReelDuration] = useState<5 | 10>(5);
   const [generatedReelUrl, setGeneratedReelUrl] = useState<string>('');
   
   // Delete event states
@@ -1249,13 +1249,12 @@ export default function EventDetailsPage({ params }: PageProps) {
                     <h4 className="text-md font-medium mb-3" style={{color: '#111827'}}>Duration</h4>
                     <div className="space-y-2">
                       {[
-                        { value: 15, label: '15 seconds', description: 'Perfect for Instagram Stories' },
-                        { value: 30, label: '30 seconds', description: 'Ideal for Instagram Reels' },
-                        { value: 60, label: '60 seconds', description: 'Extended storytelling format' }
+                        { value: 5, label: '5 seconds', description: 'Quick highlight reel' },
+                        { value: 10, label: '10 seconds', description: 'Perfect for social media' }
                       ].map((duration) => (
                         <button
                           key={duration.value}
-                          onClick={() => setReelDuration(duration.value as 15 | 30 | 60)}
+                          onClick={() => setReelDuration(duration.value as 5 | 10)}
                           className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
                             reelDuration === duration.value
                               ? 'border-purple-500 bg-purple-50'
