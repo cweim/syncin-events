@@ -7,9 +7,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Camera, Mail, Eye, EyeOff, ArrowLeft } from 'lucide-react';
-import { signInOrganizer, getCurrentFirebaseUser } from '@/lib/auth';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { signInOrganizer, getCurrentFirebaseUser, signInWithGoogle } from '@/lib/auth';
 
 function SignInPageContent() {
   const router = useRouter();
@@ -64,12 +62,14 @@ function SignInPageContent() {
     setError('');
 
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const { user, isNewUser } = await signInWithGoogle();
       
-      // TODO: Check if this is a new user and redirect to onboarding
-      // For now, redirect to the intended destination
-      router.push(redirectUrl);
+      // For new users, redirect to onboarding
+      if (isNewUser) {
+        router.push('/auth/onboarding');
+      } else {
+        router.push(redirectUrl);
+      }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to sign in with Google';
       setError(errorMessage);

@@ -9,6 +9,8 @@ import {
   User as FirebaseUser,
   signInAnonymously,
   updateProfile,
+  signInWithPopup,
+  GoogleAuthProvider,
 } from 'firebase/auth';
 import { auth } from './firebase';
 import { createUser, getUser, updateUser as updateUserInDb, propagateDisplayNameToParticipations } from './database';
@@ -157,6 +159,36 @@ export const updateUser = async (userId: string, updates: Partial<User>): Promis
     }
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Failed to update user';
+    throw new Error(errorMessage);
+  }
+};
+
+// Unified Google OAuth (handles both sign-in and sign-up)
+export const signInWithGoogle = async (): Promise<{ user: FirebaseUser; isNewUser: boolean }> => {
+  try {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+    const user = result.user;
+    
+    // Check if user exists in our database
+    const existingUser = await getUser(user.uid);
+    const isNewUser = !existingUser;
+    
+    if (isNewUser) {
+      // Create new user in database
+      const userData: CreateUserData = {
+        email: user.email || '',
+        displayName: user.displayName || '',
+        profilePhotoUrl: user.photoURL || '',
+        role: 'attendee',
+      };
+      
+      await createUser(user.uid, userData);
+    }
+    
+    return { user, isNewUser };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Failed to sign in with Google';
     throw new Error(errorMessage);
   }
 };

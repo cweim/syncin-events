@@ -7,9 +7,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Camera, Mail, Eye, EyeOff, ArrowLeft, Check } from 'lucide-react';
-import { registerAttendee, getCurrentFirebaseUser } from '@/lib/auth';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { registerAttendee, getCurrentFirebaseUser, signInWithGoogle } from '@/lib/auth';
 
 function SignUpPageContent() {
   const router = useRouter();
@@ -84,11 +82,10 @@ function SignUpPageContent() {
     setError('');
 
     try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
+      const { user, isNewUser } = await signInWithGoogle();
       
-      // TODO: Check if this is a new user and redirect to onboarding
-      // For now, redirect to onboarding to complete profile
+      // Always redirect to onboarding for signup flow
+      // This ensures users can complete/update their profile
       router.push(`/auth/onboarding?redirect=${encodeURIComponent(redirectUrl)}`);
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to sign up with Google';
