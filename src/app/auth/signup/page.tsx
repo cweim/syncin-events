@@ -24,7 +24,7 @@ function SignUpPageContent() {
   const [error, setError] = useState('');
 
   // Get redirect URL from query params
-  const redirectUrl = searchParams.get('redirect') || '/my-events';
+  const redirectUrl = searchParams.get('redirect') || '/dashboard';
 
   useEffect(() => {
     // Check if user is already signed in

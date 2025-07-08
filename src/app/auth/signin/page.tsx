@@ -22,7 +22,7 @@ function SignInPageContent() {
   const [error, setError] = useState('');
 
   // Get redirect URL from query params (e.g., /event/startup-pitch/prompts)
-  const redirectUrl = searchParams.get('redirect') || '/my-events';
+  const redirectUrl = searchParams.get('redirect') || '/dashboard';
 
   useEffect(() => {
     // Check if user is already signed in

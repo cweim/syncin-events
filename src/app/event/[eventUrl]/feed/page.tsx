@@ -820,15 +820,6 @@ export default function EventFeedPage({ params }: PageProps) {
           )}
         </div>
 
-        {/* Floating Camera Button (only show when unlocked) */}
-        {participant.hasPosted && (
-          <Link
-            href={`/event/${eventUrl}/camera`}
-            className={`fixed bottom-6 right-6 w-14 h-14 ${themeStyles.cardBackground} rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all active:scale-95 z-10`}
-          >
-            <span className={`text-2xl font-light ${themeStyles.textPrimary}`}>+</span>
-          </Link>
-        )}
       </main>
     </div>
   );

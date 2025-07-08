@@ -30,7 +30,7 @@ function OnboardingPageContent() {
   const [error, setError] = useState('');
 
   // Get redirect URL from query params
-  const redirectUrl = searchParams.get('redirect') || '/my-events';
+  const redirectUrl = searchParams.get('redirect') || '/dashboard';
 
   const handleInputChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
