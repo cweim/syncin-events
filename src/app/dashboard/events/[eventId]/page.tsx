@@ -7,8 +7,6 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   ArrowLeft, 
-  QrCode, 
-  Settings, 
   Users, 
   Camera, 
   Copy, 
@@ -21,15 +19,18 @@ import {
   Heart,
   MessageCircle,
   DownloadCloud,
-  Grid,
-  Eye,
-  EyeOff
+  Video,
+  Sparkles,
+  Play,
+  Loader2
 } from 'lucide-react';
 import QRCodeReact from 'react-qr-code';
 import { getEvent, getAllEventPosts, deleteEvent } from '@/lib/database';
 import { downloadPhoto, downloadAllPhotos } from '@/lib/download-utils';
 import { Event, Post } from '@/types';
 import { useRouter } from 'next/navigation';
+import { useReelGeneration, usePhotoUpload } from '@/hooks/useReelGeneration';
+import { useReelAnalytics } from '@/components/ReelAnalytics';
 
 interface PageProps {
   params: Promise<{ eventId: string }>;
@@ -39,7 +40,7 @@ export default function EventDetailsPage({ params }: PageProps) {
   const router = useRouter();
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'qr' | 'album' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'qr' | 'album' | 'reels' | 'settings'>('overview');
   const [copySuccess, setCopySuccess] = useState(false);
   const [eventId, setEventId] = useState<string>('');
   
@@ -49,8 +50,42 @@ export default function EventDetailsPage({ params }: PageProps) {
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [downloadingAll, setDownloadingAll] = useState(false);
   
+  // Reels tab states
+  const [selectedPhotosForReel, setSelectedPhotosForReel] = useState<Set<string>>(new Set());
+  const [reelStyle, setReelStyle] = useState<'trendy' | 'elegant' | 'energetic'>('trendy');
+  const [reelDuration, setReelDuration] = useState<15 | 30 | 60>(30);
+  const [generatedReelUrl, setGeneratedReelUrl] = useState<string>('');
+  
   // Delete event states
   const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Reel generation states
+  const [generationError, setGenerationError] = useState<string>('');
+  
+  // API hooks for reel generation
+  const {
+    generateReel,
+    currentTask,
+    isGenerating,
+    progress,
+    error: reelError,
+    reset: resetReel
+  } = useReelGeneration();
+  
+  // Photo upload hook (unused for now but ready for future use)
+  // const { uploadPhotos, isUploading, uploadProgress, uploadError, resetUpload } = usePhotoUpload();
+  
+  // Analytics tracking
+  const analytics = useReelAnalytics(eventId, 'current-user-id');
+  
+  // Track completion/failure events
+  useEffect(() => {
+    if (currentTask?.status === 'completed' && currentTask.taskId) {
+      analytics.trackGenerateCompleted(currentTask.taskId);
+    } else if (currentTask?.status === 'failed' && currentTask.taskId) {
+      analytics.trackGenerateFailed(currentTask.taskId);
+    }
+  }, [currentTask?.status, currentTask?.taskId, analytics]);
 
   useEffect(() => {
     const loadEventId = async () => {
@@ -367,6 +402,51 @@ export default function EventDetailsPage({ params }: PageProps) {
     return [];
   };
 
+  // Reel Generation Functions
+  const handleGenerateReel = async () => {
+    if (selectedPhotosForReel.size < 3) {
+      alert('Please select at least 3 photos to generate a reel');
+      return;
+    }
+
+    try {
+      // Reset any previous errors
+      setGenerationError('');
+      setGeneratedReelUrl('');
+      
+      // Get the selected photos
+      const selectedPosts = allPosts.filter(post => selectedPhotosForReel.has(post.id));
+      
+      // First, convert photo URLs to files for upload (if needed)
+      // For now, we'll use the existing URLs directly
+      const photoUrls = selectedPosts.map(post => post.imageUrl);
+
+      console.log('🎬 Starting reel generation with:', {
+        photoCount: photoUrls.length,
+        style: reelStyle,
+        duration: reelDuration
+      });
+
+      // Track analytics
+      analytics.trackGenerateStarted(reelStyle, reelDuration, photoUrls.length);
+
+      // Start reel generation using the hook
+      await generateReel({
+        photoUrls,
+        style: reelStyle,
+        duration: reelDuration,
+        eventId: event?.id || '',
+        userId: 'current-user-id' // TODO: Get from auth context
+      });
+      
+      console.log('✅ Reel generation started successfully');
+
+    } catch (error) {
+      console.error('❌ Error generating reel:', error);
+      setGenerationError(error instanceof Error ? error.message : 'Failed to generate reel');
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
@@ -539,6 +619,21 @@ export default function EventDetailsPage({ params }: PageProps) {
                 }}
               >
                 Event Album
+              </button>
+              <button
+                onClick={() => setActiveTab('reels')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'reels'
+                    ? 'text-indigo-600'
+                    : 'border-transparent hover:text-gray-700'
+                }`}
+                style={{
+                  borderColor: activeTab === 'reels' ? '#6C63FF' : 'transparent',
+                  color: activeTab === 'reels' ? '#6C63FF' : '#6B7280'
+                }}
+              >
+                <Video className="h-4 w-4 mr-1 inline" />
+                Create Reels
               </button>
               <button
                 onClick={() => setActiveTab('settings')}
@@ -1016,6 +1111,337 @@ export default function EventDetailsPage({ params }: PageProps) {
                         'Delete Event'
                       )}
                     </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'reels' && (
+              <div className="space-y-6">
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-medium mb-2" style={{color: '#111827'}}>
+                      <Video className="h-5 w-5 inline mr-2" />
+                      Create AI Reels
+                    </h3>
+                    <p className="text-sm" style={{color: '#6B7280'}}>
+                      Generate Instagram-ready reels from your event photos using AI
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Sparkles className="h-5 w-5" style={{color: '#FF9F1C'}} />
+                    <span className="text-sm font-medium" style={{color: '#FF9F1C'}}>Powered by RunwayML</span>
+                  </div>
+                </div>
+
+                {/* Photo Selection */}
+                <div>
+                  <h4 className="text-md font-medium mb-3" style={{color: '#111827'}}>Select Photos for Reel</h4>
+                  <p className="text-sm mb-4" style={{color: '#6B7280'}}>
+                    Choose 3-10 photos from your event album to create an engaging reel
+                  </p>
+                  
+                  {allPosts.length > 0 ? (
+                    <div className="grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                      {allPosts.map((post) => (
+                        <div 
+                          key={post.id} 
+                          className={`relative group border-2 rounded-lg overflow-hidden cursor-pointer transition-all ${
+                            selectedPhotosForReel.has(post.id) 
+                              ? 'border-purple-500 ring-2 ring-purple-200' 
+                              : 'border-gray-200 hover:border-purple-300'
+                          }`}
+                          onClick={() => {
+                            const newSelection = new Set(selectedPhotosForReel);
+                            if (newSelection.has(post.id)) {
+                              newSelection.delete(post.id);
+                            } else if (newSelection.size < 10) {
+                              newSelection.add(post.id);
+                            }
+                            setSelectedPhotosForReel(newSelection);
+                          }}
+                        >
+                          <img 
+                            src={post.imageUrl} 
+                            alt={post.caption || 'Event photo'}
+                            className="w-full h-32 object-cover"
+                          />
+                          
+                          {/* Selection indicator */}
+                          <div className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
+                            selectedPhotosForReel.has(post.id) 
+                              ? 'bg-purple-500 border-purple-500' 
+                              : 'bg-white border-gray-300 group-hover:border-purple-400'
+                          }`}>
+                            {selectedPhotosForReel.has(post.id) && (
+                              <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            )}
+                          </div>
+                          
+                          {/* Photo number indicator */}
+                          {selectedPhotosForReel.has(post.id) && (
+                            <div className="absolute top-2 right-2 w-6 h-6 rounded-full bg-purple-500 text-white text-xs font-bold flex items-center justify-center">
+                              {Array.from(selectedPhotosForReel).indexOf(post.id) + 1}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 border-2 border-dashed border-gray-300 rounded-lg">
+                      <Camera className="h-12 w-12 mx-auto mb-4" style={{color: '#9CA3AF'}} />
+                      <p className="text-sm" style={{color: '#6B7280'}}>No photos available yet</p>
+                      <p className="text-xs mt-1" style={{color: '#9CA3AF'}}>Photos will appear here once uploaded to the event</p>
+                    </div>
+                  )}
+                  
+                  {selectedPhotosForReel.size > 0 && (
+                    <div className="mt-4 p-3 bg-purple-50 rounded-lg border border-purple-200">
+                      <p className="text-sm" style={{color: '#7C3AED'}}>
+                        {selectedPhotosForReel.size} photo{selectedPhotosForReel.size > 1 ? 's' : ''} selected 
+                        {selectedPhotosForReel.size < 3 && (
+                          <span style={{color: '#DC2626'}}>(minimum 3 required)</span>
+                        )}
+                        {selectedPhotosForReel.size >= 10 && (
+                          <span style={{color: '#059669'}}>(maximum reached)</span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Reel Customization */}
+                <div className="grid md:grid-cols-2 gap-6">
+                  {/* Style Selection */}
+                  <div>
+                    <h4 className="text-md font-medium mb-3" style={{color: '#111827'}}>Reel Style</h4>
+                    <div className="space-y-2">
+                      {[
+                        { value: 'trendy', label: 'Trendy', description: 'Modern cuts with upbeat transitions' },
+                        { value: 'elegant', label: 'Elegant', description: 'Smooth transitions with classy effects' },
+                        { value: 'energetic', label: 'Energetic', description: 'Fast-paced with dynamic movements' }
+                      ].map((style) => (
+                        <button
+                          key={style.value}
+                          onClick={() => setReelStyle(style.value as 'trendy' | 'elegant' | 'energetic')}
+                          className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+                            reelStyle === style.value
+                              ? 'border-purple-500 bg-purple-50'
+                              : 'border-gray-200 hover:border-purple-300'
+                          }`}
+                        >
+                          <div className="font-medium" style={{color: reelStyle === style.value ? '#7C3AED' : '#111827'}}>
+                            {style.label}
+                          </div>
+                          <div className="text-sm" style={{color: '#6B7280'}}>
+                            {style.description}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Duration Selection */}
+                  <div>
+                    <h4 className="text-md font-medium mb-3" style={{color: '#111827'}}>Duration</h4>
+                    <div className="space-y-2">
+                      {[
+                        { value: 15, label: '15 seconds', description: 'Perfect for Instagram Stories' },
+                        { value: 30, label: '30 seconds', description: 'Ideal for Instagram Reels' },
+                        { value: 60, label: '60 seconds', description: 'Extended storytelling format' }
+                      ].map((duration) => (
+                        <button
+                          key={duration.value}
+                          onClick={() => setReelDuration(duration.value as 15 | 30 | 60)}
+                          className={`w-full text-left p-3 rounded-lg border-2 transition-all ${
+                            reelDuration === duration.value
+                              ? 'border-purple-500 bg-purple-50'
+                              : 'border-gray-200 hover:border-purple-300'
+                          }`}
+                        >
+                          <div className="font-medium" style={{color: reelDuration === duration.value ? '#7C3AED' : '#111827'}}>
+                            {duration.label}
+                          </div>
+                          <div className="text-sm" style={{color: '#6B7280'}}>
+                            {duration.description}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Generate Button */}
+                <div className="pt-6 border-t border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-md font-medium" style={{color: '#111827'}}>Ready to Create?</h4>
+                      <p className="text-sm" style={{color: '#6B7280'}}>Generate your AI-powered reel in {reelStyle} style</p>
+                    </div>
+                    <button
+                      onClick={handleGenerateReel}
+                      disabled={selectedPhotosForReel.size < 3 || isGenerating}
+                      className="bg-gradient-to-r from-purple-500 to-indigo-600 text-white px-6 py-3 rounded-lg font-medium transition-all hover:from-purple-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
+                    >
+                      {isGenerating ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Generating...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="h-4 w-4 mr-2" />
+                          Generate Reel
+                        </>
+                      )}
+                    </button>
+                  </div>
+                  
+                  {selectedPhotosForReel.size < 3 && (
+                    <p className="text-sm mt-2" style={{color: '#DC2626'}}>Please select at least 3 photos to generate a reel</p>
+                  )}
+                  
+                  {/* Error Messages */}
+                  {(reelError || generationError) && (
+                    <div className="mt-4 p-3 bg-red-50 rounded-lg border border-red-200">
+                      <p className="text-sm" style={{color: '#DC2626'}}>
+                        {reelError || generationError}
+                      </p>
+                      <button 
+                        onClick={() => {
+                          resetReel();
+                          setGenerationError('');
+                        }}
+                        className="text-xs mt-2 text-red-600 hover:text-red-800 underline"
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Progress Indicator */}
+                {isGenerating && (
+                  <div className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg p-6 border border-purple-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-md font-medium" style={{color: '#7C3AED'}}>Creating Your Reel</h4>
+                      <span className="text-sm font-medium" style={{color: '#7C3AED'}}>{progress || 0}%</span>
+                    </div>
+                    
+                    <div className="w-full bg-purple-200 rounded-full h-2 mb-4">
+                      <div 
+                        className="bg-gradient-to-r from-purple-500 to-indigo-600 h-2 rounded-full transition-all duration-500"
+                        style={{width: `${progress || 0}%`}}
+                      ></div>
+                    </div>
+                    
+                    <div className="space-y-2 text-sm" style={{color: '#6B7280'}}>
+                      <div className={`flex items-center ${(progress || 0) >= 20 ? 'text-green-600' : ''}`}>
+                        <div className={`w-2 h-2 rounded-full mr-2 ${(progress || 0) >= 20 ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        Uploading photos to RunwayML
+                      </div>
+                      <div className={`flex items-center ${(progress || 0) >= 40 ? 'text-green-600' : ''}`}>
+                        <div className={`w-2 h-2 rounded-full mr-2 ${(progress || 0) >= 40 ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        Processing with AI
+                      </div>
+                      <div className={`flex items-center ${(progress || 0) >= 70 ? 'text-green-600' : ''}`}>
+                        <div className={`w-2 h-2 rounded-full mr-2 ${(progress || 0) >= 70 ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        Generating video transitions
+                      </div>
+                      <div className={`flex items-center ${(progress || 0) >= 95 ? 'text-green-600' : ''}`}>
+                        <div className={`w-2 h-2 rounded-full mr-2 ${(progress || 0) >= 95 ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        Finalizing reel
+                      </div>
+                    </div>
+                    
+                    {/* Show current task info */}
+                    {currentTask && (
+                      <div className="mt-4 p-3 bg-purple-100 rounded-lg">
+                        <p className="text-sm font-medium" style={{color: '#7C3AED'}}>Status: {currentTask.status}</p>
+                        {currentTask.estimatedTime && (
+                          <p className="text-xs" style={{color: '#6B7280'}}>Estimated time: {currentTask.estimatedTime}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Generated Reel Preview */}
+                {(generatedReelUrl || currentTask?.videoUrl) && (
+                  <div className="bg-green-50 rounded-lg p-6 border border-green-200">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-md font-medium" style={{color: '#059669'}}>Reel Generated Successfully!</h4>
+                      <div className="flex items-center space-x-2">
+                        <Play className="h-4 w-4" style={{color: '#059669'}} />
+                        <span className="text-sm font-medium" style={{color: '#059669'}}>Ready to share</span>
+                      </div>
+                    </div>
+                    
+                    <video 
+                      src={generatedReelUrl || currentTask?.videoUrl}
+                      controls
+                      className="w-full max-w-sm rounded-lg mb-4"
+                      style={{backgroundColor: '#000'}}
+                    />
+                    
+                    <div className="flex flex-wrap gap-3">
+                      <button 
+                        onClick={() => {
+                          const videoUrl = generatedReelUrl || currentTask?.videoUrl;
+                          if (videoUrl) {
+                            const a = document.createElement('a');
+                            a.href = videoUrl;
+                            a.download = `${event?.title || 'reel'}-${Date.now()}.mp4`;
+                            a.click();
+                            analytics.trackDownload(currentTask?.taskId || '');
+                          }
+                        }}
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-green-700 transition-colors flex items-center"
+                      >
+                        <Download className="h-4 w-4 mr-2" />
+                        Download Reel
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const videoUrl = generatedReelUrl || currentTask?.videoUrl;
+                          if (videoUrl) {
+                            window.open(`https://www.instagram.com/`, '_blank');
+                            analytics.trackShare(currentTask?.taskId || '');
+                          }
+                        }}
+                        className="border border-green-600 text-green-600 px-4 py-2 rounded-lg font-medium hover:bg-green-50 transition-colors"
+                      >
+                        Share to Instagram
+                      </button>
+                      <button 
+                        onClick={() => {
+                          resetReel();
+                          setGeneratedReelUrl('');
+                          setGenerationError('');
+                          setSelectedPhotosForReel(new Set());
+                        }}
+                        className="border border-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+                      >
+                        Generate Another
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Info Box */}
+                <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+                  <div className="flex items-start">
+                    <Sparkles className="h-5 w-5 mt-0.5 mr-3" style={{color: '#3B82F6'}} />
+                    <div>
+                      <h5 className="text-sm font-medium mb-1" style={{color: '#1E40AF'}}>AI-Powered Reel Creation</h5>
+                      <p className="text-sm" style={{color: '#3B82F6'}}>
+                        Our AI analyzes your photos and creates professional transitions, timing, and effects based on the style you choose. 
+                        Generated reels are optimized for Instagram and other social platforms.
+                      </p>
+                    </div>
                   </div>
                 </div>
               </div>
