@@ -10,6 +10,7 @@ import { Camera, MapPin, Calendar, Clock, Users, ArrowRight, QrCode } from 'luci
 import { getEventByUrl } from '@/lib/database';
 import { getCurrentFirebaseUser } from '@/lib/auth';
 import { Event } from '@/types';
+import { getThemeStyles, getThemeInlineStyles, getCardStyles } from '@/lib/theme-utils';
 
 interface PageProps {
   params: Promise<{ eventUrl: string }>;
@@ -146,15 +147,20 @@ export default function EventLandingPage({ params }: PageProps) {
 
   const { dateStr, timeStr } = formatEventDate(event.startDate, event.endDate);
 
+  // Get theme styles
+  const theme = event?.theme || 'light';
+  const themeStyles = getThemeStyles(theme);
+  const themeInlineStyles = getThemeInlineStyles(theme);
+
   return (
-    <div className="min-h-screen" style={{backgroundColor: '#F9FAFB'}}>
+    <div className={`min-h-screen ${themeStyles.background}`} style={themeInlineStyles}>
       {/* Header */}
-      <header className="bg-white shadow-sm">
+      <header className={`${themeStyles.cardBackground} shadow-sm`}>
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center">
               <Camera className="h-8 w-8" style={{color: '#6C63FF'}} />
-              <span className="ml-2 text-xl font-bold" style={{color: '#111827'}}>SyncIn</span>
+              <span className={`ml-2 text-xl font-bold ${themeStyles.textPrimary}`}>SyncIn</span>
             </div>
           </div>
         </div>
@@ -162,7 +168,7 @@ export default function EventLandingPage({ params }: PageProps) {
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Event Hero Section */}
-        <div className="bg-white rounded-xl shadow-sm overflow-hidden mb-8">
+        <div className={`${getCardStyles(theme)} rounded-xl shadow-sm overflow-hidden mb-8`}>
           {/* Cover Image Placeholder */}
           <div 
             className="h-48 md:h-64 bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center"
@@ -185,7 +191,7 @@ export default function EventLandingPage({ params }: PageProps) {
           <div className="p-6 md:p-8">
             {/* Event Title & Status */}
             <div className="flex items-start justify-between mb-4">
-              <h1 className="text-2xl md:text-3xl font-bold" style={{color: '#111827'}}>
+              <h1 className={`text-2xl md:text-3xl font-bold ${themeStyles.textPrimary}`}>
                 {event.title}
               </h1>
               <div className="flex items-center space-x-2 ml-4">
@@ -201,30 +207,30 @@ export default function EventLandingPage({ params }: PageProps) {
             {/* Event Details */}
             <div className="grid md:grid-cols-2 gap-6 mb-6">
               <div className="space-y-3">
-                <div className="flex items-center" style={{color: '#6B7280'}}>
+                <div className={`flex items-center ${themeStyles.textSecondary}`}>
                   <MapPin className="h-5 w-5 mr-3 flex-shrink-0" />
                   <span>{event.location}</span>
                 </div>
-                <div className="flex items-center" style={{color: '#6B7280'}}>
+                <div className={`flex items-center ${themeStyles.textSecondary}`}>
                   <Calendar className="h-5 w-5 mr-3 flex-shrink-0" />
                   <span>{dateStr}</span>
                 </div>
-                <div className="flex items-center" style={{color: '#6B7280'}}>
+                <div className={`flex items-center ${themeStyles.textSecondary}`}>
                   <Clock className="h-5 w-5 mr-3 flex-shrink-0" />
                   <span>{timeStr}</span>
                 </div>
               </div>
 
               <div className="space-y-3">
-                <div className="flex items-center" style={{color: '#6B7280'}}>
+                <div className={`flex items-center ${themeStyles.textSecondary}`}>
                   <Users className="h-5 w-5 mr-3 flex-shrink-0" />
                   <span>{event.stats.totalParticipants} participants</span>
                 </div>
-                <div className="flex items-center" style={{color: '#6B7280'}}>
+                <div className={`flex items-center ${themeStyles.textSecondary}`}>
                   <Camera className="h-5 w-5 mr-3 flex-shrink-0" />
                   <span>{event.stats.totalPosts} photos shared</span>
                 </div>
-                <div className="flex items-center" style={{color: '#6B7280'}}>
+                <div className={`flex items-center ${themeStyles.textSecondary}`}>
                   <span className="h-5 w-5 mr-3 flex-shrink-0 text-center">❤️</span>
                   <span>{event.stats.totalLikes} likes</span>
                 </div>
@@ -233,18 +239,18 @@ export default function EventLandingPage({ params }: PageProps) {
 
             {/* Event Description */}
             <div className="mb-8">
-              <h3 className="text-lg font-medium mb-3" style={{color: '#111827'}}>About This Event</h3>
-              <p className="text-base leading-relaxed" style={{color: '#6B7280'}}>
+              <h3 className={`text-lg font-medium mb-3 ${themeStyles.textPrimary}`}>About This Event</h3>
+              <p className={`text-base leading-relaxed ${themeStyles.textSecondary}`}>
                 {event.description}
               </p>
             </div>
 
             {/* Call to Action */}
             <div className="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-lg p-6 text-center">
-              <h3 className="text-xl font-bold mb-2" style={{color: '#111827'}}>
+              <h3 className={`text-xl font-bold mb-2 ${themeStyles.textPrimary}`}>
                 Ready to join the fun? 📸
               </h3>
-              <p className="mb-6" style={{color: '#6B7280'}}>
+              <p className={`mb-6 ${themeStyles.textSecondary}`}>
                 Connect with other attendees, share photos, and create memories together!
               </p>
               
@@ -257,7 +263,7 @@ export default function EventLandingPage({ params }: PageProps) {
                 <ArrowRight className="ml-2 h-5 w-5" />
               </button>
               
-              <div className="mt-4 text-sm" style={{color: '#9CA3AF'}}>
+              <div className={`mt-4 text-sm ${themeStyles.textMuted}`}>
                 No app download required • Works in your browser
               </div>
             </div>
@@ -265,8 +271,8 @@ export default function EventLandingPage({ params }: PageProps) {
         </div>
 
         {/* What Happens Next */}
-        <div className="bg-white rounded-xl shadow-sm p-6">
-          <h3 className="text-lg font-medium mb-4" style={{color: '#111827'}}>What happens next?</h3>
+        <div className={`${getCardStyles(theme)} rounded-xl shadow-sm p-6`}>
+          <h3 className={`text-lg font-medium mb-4 ${themeStyles.textPrimary}`}>What happens next?</h3>
           <div className="grid md:grid-cols-3 gap-4">
             <div className="text-center p-4">
               <div className="w-12 h-12 rounded-full mx-auto mb-3 flex items-center justify-center" style={{backgroundColor: '#EDE9FE'}}>

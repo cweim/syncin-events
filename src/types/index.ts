@@ -89,6 +89,9 @@ export interface Event {
   allowGuestPosting: boolean;   // Can non-logged users post? (DEPRECATED - now all users must have accounts)
   moderationEnabled: boolean;
   
+  // Theme Settings
+  theme: 'light' | 'dark';
+  
   // Statistics
   stats: EventStats;
   

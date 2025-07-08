@@ -19,6 +19,7 @@ interface EventFormData {
   startDate: string;
   endDate: string;
   coverPhoto: File | null;
+  theme: 'light' | 'dark';
   prompts: Array<{ 
     question: string; 
     type: 'text' | 'multipleChoice'; 
@@ -41,6 +42,7 @@ export default function DashboardPage() {
     startDate: '',
     endDate: '',
     coverPhoto: null,
+    theme: 'light',
     prompts: [
       { question: "What's your name?", type: 'text', required: true },
       { question: "What brings you to this event?", type: 'text', required: false }
@@ -394,6 +396,7 @@ export default function DashboardPage() {
         coverImageUrl,
         eventUrl,
         prompts: processedPrompts,
+        theme: formData.theme,
         isActive: true,
         requiresApproval: false,
         visibility: 'public',
@@ -429,6 +432,7 @@ export default function DashboardPage() {
         startDate: '',
         endDate: '',
         coverPhoto: null,
+        theme: 'light',
         prompts: [
           { question: "What's your name?", type: 'text', required: true },
           { question: "What brings you to this event?", type: 'text', required: false }
@@ -477,8 +481,8 @@ export default function DashboardPage() {
           <div>
             <div className="flex justify-between items-center mb-8">
               <div>
-                <h1 className="text-3xl font-bold" style={{color: '#111827'}}>Organizer Dashboard</h1>
-                <p className="mt-2" style={{color: '#6B7280'}}>Create and manage your photo-sharing events</p>
+                <h1 className="text-3xl font-bold" style={{color: '#111827'}}>Your Event Studio</h1>
+                <p className="mt-2" style={{color: '#6B7280'}}>Create social experiences that generate amazing content and lasting memories</p>
               </div>
               <button
                 onClick={() => setIsCreating(true)}
@@ -637,16 +641,23 @@ export default function DashboardPage() {
             ) : (
               // Empty State
               <div className="bg-white rounded-lg shadow-sm p-12 text-center">
-                <QrCode className="h-16 w-16 mx-auto mb-4" style={{color: '#D1D5DB'}} />
-                <h3 className="text-xl font-semibold mb-2" style={{color: '#111827'}}>No events yet</h3>
-                <p className="mb-6" style={{color: '#6B7280'}}>Create your first event to start engaging with attendees</p>
+                <Camera className="h-16 w-16 mx-auto mb-4" style={{color: '#D1D5DB'}} />
+                <h3 className="text-xl font-semibold mb-2" style={{color: '#111827'}}>Ready to create something amazing?</h3>
+                <p className="mb-6 max-w-md mx-auto" style={{color: '#6B7280'}}>
+                  Turn your next event into a social experience. Get attendees sharing photos, 
+                  collect user-generated content, and create lasting memories — all with just a QR code.
+                </p>
                 <button
                   onClick={() => setIsCreating(true)}
-                  className="text-white px-6 py-3 rounded-lg transition-colors font-medium hover:opacity-90"
+                  className="text-white px-6 py-3 rounded-lg transition-colors font-medium hover:opacity-90 flex items-center mx-auto"
                   style={{backgroundColor: '#6C63FF'}}
                 >
+                  <Camera className="h-5 w-5 mr-2" />
                   Create Your First Event
                 </button>
+                <p className="mt-4 text-sm" style={{color: '#9CA3AF'}}>
+                  Start free — no credit card required
+                </p>
               </div>
             )}
           </div>
@@ -741,6 +752,70 @@ export default function DashboardPage() {
                     style={{color: '#111827'}}
                     placeholder="TechHub Singapore"
                   />
+                </div>
+              </div>
+
+              {/* Theme Selection */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium mb-3" style={{color: '#111827'}}>
+                  Event Theme
+                </label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div 
+                    className={`relative p-4 border-2 rounded-lg cursor-pointer transition-all hover:scale-105 ${
+                      formData.theme === 'light' 
+                        ? 'border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50' 
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                    onClick={() => handleInputChange('theme', 'light')}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="w-12 h-8 bg-white border border-gray-300 rounded shadow-sm flex items-center justify-center">
+                        <div className="w-6 h-4 bg-gradient-to-br from-blue-100 to-purple-100 rounded"></div>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-900">Light Theme</h3>
+                        <p className="text-xs text-gray-500">Clean and bright interface</p>
+                      </div>
+                    </div>
+                    {formData.theme === 'light' && (
+                      <div className="absolute top-2 right-2">
+                        <div className="w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
+                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div 
+                    className={`relative p-4 border-2 rounded-lg cursor-pointer transition-all hover:scale-105 ${
+                      formData.theme === 'dark' 
+                        ? 'border-indigo-500 ring-2 ring-indigo-200 bg-indigo-50' 
+                        : 'border-gray-300 hover:border-gray-400'
+                    }`}
+                    onClick={() => handleInputChange('theme', 'dark')}
+                  >
+                    <div className="flex items-center space-x-3">
+                      <div className="w-12 h-8 bg-gray-900 border border-gray-700 rounded shadow-sm flex items-center justify-center">
+                        <div className="w-6 h-4 bg-gradient-to-br from-gray-700 to-gray-800 rounded"></div>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-medium text-gray-900">Dark Theme</h3>
+                        <p className="text-xs text-gray-500">Sleek and modern interface</p>
+                      </div>
+                    </div>
+                    {formData.theme === 'dark' && (
+                      <div className="absolute top-2 right-2">
+                        <div className="w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
+                          <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                            <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 

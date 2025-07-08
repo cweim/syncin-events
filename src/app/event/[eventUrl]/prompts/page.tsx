@@ -9,7 +9,8 @@ import Link from 'next/link';
 import { Camera, ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { getEventByUrl, createEventParticipant, getParticipantByUser } from '@/lib/database';
 import { getCurrentFirebaseUser, addEventToUserHistory } from '@/lib/auth';
-import { Event, CreateParticipantData } from '@/types';
+import { Event, CreateParticipantData, PromptResponse } from '@/types';
+import { getThemeStyles, getThemeInlineStyles, getCardStyles } from '@/lib/theme-utils';
 
 interface PageProps {
   params: Promise<{ eventUrl: string }>;
@@ -103,7 +104,7 @@ export default function EventPromptsPage({ params }: PageProps) {
     loadEvent();
   }, [eventUrl, currentUser, router]);
 
-  const handleResponseChange = (promptId: string, value: string | string[], isMultipleChoice: boolean = false) => {
+  const handleResponseChange = (promptId: string, value: string | string[]) => {
     setResponses(prev => ({ ...prev, [promptId]: value }));
     setError(''); // Clear error when user types
   };
@@ -187,16 +188,30 @@ export default function EventPromptsPage({ params }: PageProps) {
     setError('');
 
     try {
-      // Convert responses to the format expected by the database
-      const processedResponses: Record<string, string> = {};
+      // Convert responses to the format expected by the database (PromptResponse[])
+      const processedResponses: PromptResponse[] = [];
+      
+      // Get the prompts to access the question text
+      const prompts = Array.isArray(event.prompts) ? event.prompts : [];
       
       Object.entries(responses).forEach(([promptId, response]) => {
-        if (Array.isArray(response)) {
-          // For multiple choice, join selected options with commas
-          processedResponses[promptId] = response.join(', ');
-        } else {
-          // For text responses, use as is
-          processedResponses[promptId] = response;
+        const prompt = prompts.find(p => p.id === promptId);
+        if (prompt) {
+          let answerText: string;
+          if (Array.isArray(response)) {
+            // For multiple choice, join selected options with commas
+            answerText = response.join(', ');
+          } else {
+            // For text responses, use as is
+            answerText = response;
+          }
+          
+          if (answerText.trim()) {
+            processedResponses.push({
+              question: prompt.question,
+              answer: answerText
+            });
+          }
         }
       });
 
@@ -232,22 +247,24 @@ export default function EventPromptsPage({ params }: PageProps) {
   };
 
   if (loading) {
+    // Use default light theme for loading since event theme isn't loaded yet
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
-          <p style={{color: '#6B7280'}}>Loading event prompts...</p>
+          <p className="text-gray-600">Loading event prompts...</p>
         </div>
       </div>
     );
   }
 
   if (error || !event) {
+    // Use default light theme for error since event theme might not be loaded
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md mx-auto px-4">
-          <h1 className="text-2xl font-bold mb-4" style={{color: '#111827'}}>Unable to Load Event</h1>
-          <p className="mb-6" style={{color: '#6B7280'}}>{error}</p>
+          <h1 className="text-2xl font-bold mb-4 text-gray-900">Unable to Load Event</h1>
+          <p className="mb-6 text-gray-600">{error}</p>
           <div className="space-y-3">
             <Link
               href={`/event/${eventUrl}`}
@@ -273,19 +290,22 @@ export default function EventPromptsPage({ params }: PageProps) {
     }
   }).length : 0;
 
+  const themeStyles = getThemeStyles(event.theme);
+  const themeInlineStyles = getThemeInlineStyles(event.theme);
+
   return (
-    <div className="min-h-screen flex flex-col" style={{backgroundColor: '#F9FAFB'}}>
+    <div className={`min-h-screen flex flex-col ${themeStyles.background}`} style={themeInlineStyles}>
       {/* Header */}
-      <header className="bg-white shadow-sm">
+      <header className={`${themeStyles.cardBackground} shadow-sm`}>
         <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
-            <Link href={`/event/${eventUrl}`} className="flex items-center" style={{color: '#6B7280'}}>
+            <Link href={`/event/${eventUrl}`} className={`flex items-center ${themeStyles.textSecondary}`}>
               <ArrowLeft className="h-5 w-5 mr-2" />
               <span className="text-sm">Back to Event</span>
             </Link>
             <div className="flex items-center">
               <Camera className="h-6 w-6" style={{color: '#6C63FF'}} />
-              <span className="ml-2 text-lg font-bold" style={{color: '#111827'}}>SyncIn</span>
+              <span className={`ml-2 text-lg font-bold ${themeStyles.textPrimary}`}>SyncIn</span>
             </div>
           </div>
         </div>
@@ -294,24 +314,24 @@ export default function EventPromptsPage({ params }: PageProps) {
       {/* Main Content */}
       <main className="flex-1 flex items-center justify-center px-4 sm:px-6 py-12">
         <div className="w-full max-w-2xl">
-          <div className="bg-white rounded-xl shadow-sm p-8">
+          <div className={`${getCardStyles(event.theme)} rounded-xl shadow-sm p-8`}>
             {/* Header */}
             <div className="text-center mb-8">
-              <h1 className="text-2xl font-bold mb-2" style={{color: '#111827'}}>
+              <h1 className={`text-2xl font-bold mb-2 ${themeStyles.textPrimary}`}>
                 Almost there! 🎉
               </h1>
-              <p style={{color: '#6B7280'}}>
+              <p className={themeStyles.textSecondary}>
                 Help others get to know you by answering a few questions about{' '}
-                <span className="font-semibold" style={{color: '#111827'}}>{event.title}</span>
+                <span className={`font-semibold ${themeStyles.textPrimary}`}>{event.title}</span>
               </p>
               
               {/* Progress */}
               <div className="mt-4 flex items-center justify-center space-x-2">
-                <div className="text-sm" style={{color: '#6B7280'}}>
+                <div className={`text-sm ${themeStyles.textMuted}`}>
                   {answeredRequiredCount} of {requiredPromptsCount} required questions completed
                 </div>
                 {requiredPromptsCount > 0 && (
-                  <div className="w-32 bg-gray-200 rounded-full h-2">
+                  <div className={`w-32 rounded-full h-2 ${event.theme === 'dark' ? 'bg-gray-700' : 'bg-gray-200'}`}>
                     <div 
                       className="h-2 rounded-full transition-all duration-300"
                       style={{
@@ -326,8 +346,8 @@ export default function EventPromptsPage({ params }: PageProps) {
 
             {/* Error Message */}
             {error && (
-              <div className="mb-6 p-4 rounded-lg border" style={{backgroundColor: '#FEF2F2', borderColor: '#FCA5A5'}}>
-                <p className="text-sm" style={{color: '#DC2626'}}>{error}</p>
+              <div className={`mb-6 p-4 rounded-lg border ${event.theme === 'dark' ? 'bg-red-900/20 border-red-800' : 'bg-red-50 border-red-200'}`}>
+                <p className={`text-sm ${themeStyles.error}`}>{error}</p>
               </div>
             )}
 
@@ -336,9 +356,9 @@ export default function EventPromptsPage({ params }: PageProps) {
               {Array.isArray(event.prompts) && event.prompts.length > 0 ? (
                 event.prompts.map((prompt, index) => (
                   prompt ? (
-                    <div key={prompt.id || index} className="border border-gray-200 rounded-lg p-6">
+                    <div key={prompt.id || index} className={`${themeStyles.border} border rounded-lg p-6`}>
                       <div className="flex items-start justify-between mb-4">
-                        <h3 className="text-lg font-medium pr-4" style={{color: '#111827'}}>
+                        <h3 className={`text-lg font-medium pr-4 ${themeStyles.textPrimary}`}>
                           {prompt.question}
                         </h3>
                         <div className="flex items-center space-x-2 flex-shrink-0">
@@ -361,15 +381,14 @@ export default function EventPromptsPage({ params }: PageProps) {
                         <textarea
                           value={(responses[prompt.id] as string) || ''}
                           onChange={(e) => handleResponseChange(prompt.id, e.target.value)}
-                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none"
-                          style={{color: '#111827'}}
+                          className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent resize-none ${themeStyles.inputBackground} ${themeStyles.inputBorder} ${themeStyles.textPrimary}`}
                           placeholder="Type your answer here..."
                           rows={3}
                           maxLength={500}
                         />
                       ) : (
                         <div className="space-y-3">
-                          <p className="text-sm" style={{color: '#6B7280'}}>
+                          <p className={`text-sm ${themeStyles.textSecondary}`}>
                             Select one or more options:
                           </p>
                           
@@ -387,13 +406,13 @@ export default function EventPromptsPage({ params }: PageProps) {
                                     className="mr-3"
                                     style={{accentColor: '#6C63FF'}}
                                   />
-                                  <span style={{color: '#111827'}}>{option}</span>
+                                  <span className={themeStyles.textPrimary}>{option}</span>
                                 </label>
                               ));
                             } else {
                               return (
-                                <div className="p-4 border border-orange-200 rounded-lg" style={{backgroundColor: '#FFF7ED'}}>
-                                  <p className="text-sm" style={{color: '#EA580C'}}>
+                                <div className={`p-4 border rounded-lg ${event.theme === 'dark' ? 'border-orange-800 bg-orange-900/20' : 'border-orange-200 bg-orange-50'}`}>
+                                  <p className={`text-sm ${themeStyles.warning}`}>
                                     ⚠️ No options available for this question.
                                   </p>
                                 </div>
@@ -406,7 +425,7 @@ export default function EventPromptsPage({ params }: PageProps) {
                             const selectedOptions = Array.isArray(responses[prompt.id]) ? responses[prompt.id] as string[] : [];
                             if (selectedOptions.length > 0) {
                               return (
-                                <div className="mt-2 text-sm" style={{color: '#6B7280'}}>
+                                <div className={`mt-2 text-sm ${themeStyles.textMuted}`}>
                                   {selectedOptions.length} option{selectedOptions.length !== 1 ? 's' : ''} selected
                                 </div>
                               );
@@ -418,7 +437,7 @@ export default function EventPromptsPage({ params }: PageProps) {
 
                       {/* Character count for text inputs */}
                       {prompt.type === 'text' && responses[prompt.id] && typeof responses[prompt.id] === 'string' && (
-                        <div className="mt-2 text-xs text-right" style={{color: '#9CA3AF'}}>
+                        <div className={`mt-2 text-xs text-right ${themeStyles.textMuted}`}>
                           {(responses[prompt.id] as string).length}/500
                         </div>
                       )}
@@ -432,7 +451,7 @@ export default function EventPromptsPage({ params }: PageProps) {
                         
                         if (isCompleted) {
                           return (
-                            <div className="mt-3 flex items-center text-sm" style={{color: '#22C55E'}}>
+                            <div className={`mt-3 flex items-center text-sm ${themeStyles.success}`}>
                               <Check className="h-4 w-4 mr-1" />
                               <span>Complete</span>
                             </div>
@@ -444,8 +463,8 @@ export default function EventPromptsPage({ params }: PageProps) {
                   ) : null
                 ))
               ) : (
-                <div className="border border-gray-200 rounded-lg p-6 text-center">
-                  <p style={{color: '#9CA3AF'}}>No prompts configured for this event. You can join directly!</p>
+                <div className={`${themeStyles.border} border rounded-lg p-6 text-center`}>
+                  <p className={themeStyles.textMuted}>No prompts configured for this event. You can join directly!</p>
                 </div>
               )}
 
@@ -454,8 +473,7 @@ export default function EventPromptsPage({ params }: PageProps) {
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full text-white py-4 rounded-lg font-semibold transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
-                  style={{backgroundColor: '#6C63FF'}}
+                  className={`w-full py-4 rounded-lg font-semibold transition-colors hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center ${themeStyles.buttonPrimary}`}
                 >
                   {isSubmitting ? (
                     <>
@@ -472,7 +490,7 @@ export default function EventPromptsPage({ params }: PageProps) {
 
                 {/* Help text */}
                 <div className="mt-4 text-center">
-                  <p className="text-sm" style={{color: '#9CA3AF'}}>
+                  <p className={`text-sm ${themeStyles.textMuted}`}>
                     Your answers help other attendees get to know you and break the ice!
                   </p>
                 </div>

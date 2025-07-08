@@ -22,6 +22,7 @@ import { getCurrentFirebaseUser } from '@/lib/auth';
 import { storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Event, EventParticipant, CreatePostData } from '@/types';
+import { getThemeStyles, getThemeInlineStyles, getCardStyles } from '@/lib/theme-utils';
 
 interface PageProps {
   params: Promise<{ eventUrl: string }>;
@@ -247,10 +248,10 @@ function EventCaptionPageContent({ params }: PageProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
-          <p style={{color: '#6B7280'}}>Loading...</p>
+          <p className="text-gray-600">Loading...</p>
         </div>
       </div>
     );
@@ -258,10 +259,10 @@ function EventCaptionPageContent({ params }: PageProps) {
 
   if (error || !event || !participant || !imageUri) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md mx-auto px-4">
-          <h1 className="text-2xl font-bold mb-4" style={{color: '#111827'}}>Unable to Process Image</h1>
-          <p className="mb-6" style={{color: '#6B7280'}}>
+          <h1 className="text-2xl font-bold mb-4 text-gray-900">Unable to Process Image</h1>
+          <p className="mb-6 text-gray-600">
             {error || 'No image data found. Please retake your photo.'}
           </p>
           <Link
@@ -276,25 +277,27 @@ function EventCaptionPageContent({ params }: PageProps) {
     );
   }
 
+  const themeStyles = getThemeStyles(event.theme);
+  const themeInlineStyles = getThemeInlineStyles(event.theme);
+
   return (
-    <div className="min-h-screen flex flex-col" style={{backgroundColor: '#F9FAFB'}}>
+    <div className={`min-h-screen flex flex-col ${themeStyles.background}`} style={themeInlineStyles}>
       {/* Header */}
-      <header className="bg-white shadow-sm">
+      <header className={`${themeStyles.cardBackground} shadow-sm`}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
             <button
               onClick={handleCancel}
               disabled={isUploading}
-              className="flex items-center"
-              style={{color: '#6B7280'}}
+              className={`flex items-center ${themeStyles.textSecondary}`}
             >
               <ArrowLeft className="h-5 w-5 mr-2" />
               <span className="text-sm">Cancel</span>
             </button>
             
             <div className="text-center">
-              <h1 className="text-lg font-bold" style={{color: '#111827'}}>Add Caption</h1>
-              <p className="text-sm" style={{color: '#6B7280'}}>{event.title}</p>
+              <h1 className={`text-lg font-bold ${themeStyles.textPrimary}`}>Add Caption</h1>
+              <p className={`text-sm ${themeStyles.textSecondary}`}>{event.title}</p>
             </div>
 
             <button
@@ -323,8 +326,8 @@ function EventCaptionPageContent({ params }: PageProps) {
         <div className="max-w-md mx-auto p-4 space-y-6">
           {/* Error Display */}
           {error && (
-            <div className="p-3 rounded-lg" style={{backgroundColor: '#FEF2F2', borderColor: '#FCA5A5'}}>
-              <p className="text-sm text-center" style={{color: '#DC2626'}}>⚠️ {error}</p>
+            <div className={`p-3 rounded-lg ${event.theme === 'dark' ? 'bg-red-900 border-red-700' : 'bg-red-50 border-red-200'}`}>
+              <p className={`text-sm text-center ${themeStyles.error}`}>⚠️ {error}</p>
             </div>
           )}
 
@@ -345,8 +348,8 @@ function EventCaptionPageContent({ params }: PageProps) {
           </div>
 
           {/* Caption Input */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <label className="block text-sm font-medium mb-3" style={{color: '#111827'}}>
+          <div className={`${themeStyles.cardBackground} rounded-2xl p-4 shadow-sm`}>
+            <label className={`block text-sm font-medium mb-3 ${themeStyles.textPrimary}`}>
               Caption *
             </label>
             <textarea
@@ -355,32 +358,32 @@ function EventCaptionPageContent({ params }: PageProps) {
                 setCaption(e.target.value);
                 if (error) setError(''); // Clear error when user types
               }}
-              className="w-full px-0 py-2 border-0 resize-none focus:ring-0 text-base"
-              style={{color: '#111827'}}
+              className={`w-full px-0 py-2 border-0 resize-none focus:ring-0 text-base ${themeStyles.textPrimary}`}
+              style={{backgroundColor: 'transparent'}}
               placeholder="Share what's happening at this moment..."
               rows={4}
               maxLength={500}
               autoFocus
             />
-            <div className="text-xs text-right mt-2" style={{color: '#9CA3AF'}}>
+            <div className={`text-xs text-right mt-2 ${themeStyles.textMuted}`}>
               {caption.length}/500 characters
             </div>
           </div>
 
           {/* Tags Input */}
-          <div className="bg-white rounded-2xl p-4 shadow-sm">
-            <label className="block text-sm font-medium mb-3" style={{color: '#111827'}}>
+          <div className={`${themeStyles.cardBackground} rounded-2xl p-4 shadow-sm`}>
+            <label className={`block text-sm font-medium mb-3 ${themeStyles.textPrimary}`}>
               Tags (optional)
             </label>
             <input
               type="text"
               value={tags}
               onChange={(e) => setTags(e.target.value)}
-              className="w-full px-0 py-2 border-0 focus:ring-0 text-base"
-              style={{color: '#111827'}}
+              className={`w-full px-0 py-2 border-0 focus:ring-0 text-base ${themeStyles.textPrimary}`}
+              style={{backgroundColor: 'transparent'}}
               placeholder="#networking #fun #event"
             />
-            <p className="text-xs mt-2" style={{color: '#9CA3AF'}}>
+            <p className={`text-xs mt-2 ${themeStyles.textMuted}`}>
               Add hashtags separated by spaces (max 10)
             </p>
           </div>

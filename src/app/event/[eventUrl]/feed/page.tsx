@@ -39,6 +39,7 @@ import {
   arrayRemove
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
+import { getThemeStyles, getThemeInlineStyles, getCardStyles } from '@/lib/theme-utils';
 
 interface PageProps {
   params: Promise<{ eventUrl: string }>;
@@ -460,22 +461,24 @@ export default function EventFeedPage({ params }: PageProps) {
   };
 
   if (loading) {
+    // Use default light theme for loading since event theme isn't loaded yet
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
-          <p style={{color: '#6B7280'}}>Loading feed...</p>
+          <p className="text-gray-600">Loading feed...</p>
         </div>
       </div>
     );
   }
 
   if (error || !event || !participant) {
+    // Use default light theme for error since event theme might not be loaded
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md mx-auto px-4">
-          <h1 className="text-2xl font-bold mb-4" style={{color: '#111827'}}>Unable to Access Event</h1>
-          <p className="mb-6" style={{color: '#6B7280'}}>{error}</p>
+          <h1 className="text-2xl font-bold mb-4 text-gray-900">Unable to Access Event</h1>
+          <p className="mb-6 text-gray-600">{error}</p>
           <Link
             href={`/event/${eventUrl}`}
             className="inline-block text-white px-6 py-2 rounded-lg transition-colors hover:opacity-90"
@@ -488,12 +491,17 @@ export default function EventFeedPage({ params }: PageProps) {
     );
   }
 
+  // Get theme styles
+  const theme = event?.theme || 'light';
+  const themeStyles = getThemeStyles(theme);
+  const themeInlineStyles = getThemeInlineStyles(theme);
+
   const renderPost = (post: PostWithInteractions, index: number) => {
     const { time, date } = formatPostDateTime(post.createdAt);
     const isCommentOpen = activeCommentPostId === post.id;
 
     return (
-      <div key={post.id || index} className="bg-white rounded-2xl shadow-sm overflow-hidden mb-5">
+      <div key={post.id || index} className={`${themeStyles.cardBackground} rounded-2xl shadow-sm overflow-hidden mb-5`}>
         {/* Post Header */}
         <div className="flex items-center justify-between p-4 pb-3">
           <button
@@ -515,15 +523,15 @@ export default function EventFeedPage({ params }: PageProps) {
               )}
             </div>
             <div className="flex-1 text-left">
-              <p className="text-base font-semibold" style={{color: '#111827'}}>
+              <p className={`text-base font-semibold ${themeStyles.textPrimary}`}>
                 {post.authorDisplayName || 'Event Attendee'}
               </p>
-              <p className="text-xs" style={{color: '#6B7280'}}>SyncIn • {event.location}</p>
+              <p className={`text-xs ${themeStyles.textSecondary}`}>SyncIn • {event.location}</p>
             </div>
           </button>
           <div className="text-right">
-            <p className="text-sm font-semibold" style={{color: '#111827'}}>{time}</p>
-            <p className="text-xs" style={{color: '#6B7280'}}>{date}</p>
+            <p className={`text-sm font-semibold ${themeStyles.textPrimary}`}>{time}</p>
+            <p className={`text-xs ${themeStyles.textSecondary}`}>{date}</p>
           </div>
         </div>
 
@@ -548,7 +556,7 @@ export default function EventFeedPage({ params }: PageProps) {
         {/* Post Caption */}
         {post.caption && (
           <div className="px-4 pt-3">
-            <p className="text-base leading-relaxed" style={{color: '#111827'}}>{post.caption}</p>
+            <p className={`text-base leading-relaxed ${themeStyles.textPrimary}`}>{post.caption}</p>
           </div>
         )}
         
@@ -573,15 +581,14 @@ export default function EventFeedPage({ params }: PageProps) {
         <div className="flex items-center px-4 py-3 gap-4">
           <button
             onClick={() => handleLike(post.id, post.userHasLiked)}
-            className="flex items-center gap-1 px-3 py-2 rounded-full transition-colors hover:bg-gray-50"
+            className={`flex items-center gap-1 px-3 py-2 rounded-full transition-colors ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}
           >
             <Heart 
               className={`h-5 w-5 ${post.userHasLiked ? 'fill-red-500 text-red-500' : ''}`} 
-              style={post.userHasLiked ? {color: '#EF4444'} : {color: '#6B7280'}} 
+              style={post.userHasLiked ? {color: '#EF4444'} : undefined}
             />
             <span 
-              className="text-sm font-medium" 
-              style={post.userHasLiked ? {color: '#EF4444'} : {color: '#6B7280'}}
+              className={`text-sm font-medium ${post.userHasLiked ? 'text-red-500' : themeStyles.textSecondary}`}
             >
               {post.likesCount}
             </span>
@@ -589,16 +596,16 @@ export default function EventFeedPage({ params }: PageProps) {
           
           <button
             onClick={() => setActiveCommentPostId(isCommentOpen ? null : post.id)}
-            className="flex items-center gap-1 px-3 py-2 rounded-full transition-colors hover:bg-gray-50"
+            className={`flex items-center gap-1 px-3 py-2 rounded-full transition-colors ${theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-50'}`}
           >
-            <MessageCircle className="h-5 w-5" style={{color: '#6B7280'}} />
-            <span className="text-sm font-medium" style={{color: '#6B7280'}}>{post.commentsCount}</span>
+            <MessageCircle className={`h-5 w-5 ${themeStyles.textSecondary}`} />
+            <span className={`text-sm font-medium ${themeStyles.textSecondary}`}>{post.commentsCount}</span>
           </button>
         </div>
 
         {/* Comment Section */}
         {isCommentOpen && (
-          <div className="border-t border-gray-100">
+          <div className={`border-t ${themeStyles.border}`}>
             {/* Existing Comments */}
             {post.comments.length > 0 && (
               <div className="px-4 py-3 max-h-40 overflow-y-auto">
@@ -626,14 +633,13 @@ export default function EventFeedPage({ params }: PageProps) {
                         <p className="text-sm">
                           <button
                             onClick={() => handleProfilePress(comment.userId)}
-                            className="font-medium hover:underline"
-                            style={{color: '#111827'}}
+                            className={`font-medium hover:underline ${themeStyles.textPrimary}`}
                           >
                             {comment.authorDisplayName || 'Event Attendee'}
                           </button>
-                          <span className="ml-2" style={{color: '#374151'}}>{comment.content}</span>
+                          <span className={`ml-2 ${themeStyles.textSecondary}`}>{comment.content}</span>
                         </p>
-                        <p className="text-xs mt-1" style={{color: '#9CA3AF'}}>
+                        <p className={`text-xs mt-1 ${themeStyles.textMuted}`}>
                           {comment.createdAt ? formatPostTime(comment.createdAt) : 'Recently'}
                         </p>
                       </div>
@@ -644,11 +650,11 @@ export default function EventFeedPage({ params }: PageProps) {
             )}
 
             {/* Comment Input */}
-            <div className="flex items-center p-4 gap-3 border-t border-gray-50">
+            <div className={`flex items-center p-4 gap-3 border-t ${themeStyles.border}`}>
               <input
                 type="text"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-full text-sm focus:ring-2 focus:border-transparent"
-                style={{color: '#111827', '--tw-ring-color': '#6C63FF'} as React.CSSProperties}
+                className={`flex-1 px-3 py-2 ${themeStyles.inputBorder} rounded-full text-sm focus:ring-2 focus:border-transparent ${themeStyles.inputBackground} ${themeStyles.textPrimary}`}
+                style={{'--tw-ring-color': '#6C63FF'} as React.CSSProperties}
                 placeholder="Add a comment..."
                 value={newCommentText}
                 onChange={(e) => setNewCommentText(e.target.value)}
@@ -678,15 +684,14 @@ export default function EventFeedPage({ params }: PageProps) {
   };
 
   return (
-    <div className="min-h-screen" style={{backgroundColor: '#F9FAFB'}}>
+    <div className={`min-h-screen ${themeStyles.background}`} style={themeInlineStyles}>
       {/* Header */}
-      <header className="bg-white shadow-sm sticky top-0 z-10">
+      <header className={`${themeStyles.cardBackground} shadow-sm sticky top-0 z-10`}>
         <div className="max-w-lg mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
             <Link
               href="/my-events"
-              className="flex items-center" 
-              style={{color: '#6B7280'}}
+              className={`flex items-center ${themeStyles.textSecondary}`}
             >
               <Home className="h-5 w-5 mr-1" />
               <span className="text-sm">Home</span>
@@ -694,7 +699,7 @@ export default function EventFeedPage({ params }: PageProps) {
             
             <div className="flex items-center">
               <Camera className="h-6 w-6 mr-2" style={{color: '#6C63FF'}} />
-              <h1 className="text-xl font-bold" style={{color: '#111827'}}>{event.title}</h1>
+              <h1 className={`text-xl font-bold ${themeStyles.textPrimary}`}>{event.title}</h1>
             </div>
             
             <Link
@@ -755,7 +760,7 @@ export default function EventFeedPage({ params }: PageProps) {
 
               {/* Show more prompt for non-posters */}
               {!participant.hasPosted && eventPosts.length > 2 && (
-                <div className="bg-white rounded-2xl p-8 text-center shadow-sm">
+                <div className={`${themeStyles.cardBackground} rounded-2xl p-8 text-center shadow-sm`}>
                   <div className="space-y-4">
                     <div className="relative">
                       <div className="w-20 h-20 mx-auto bg-gradient-to-br from-indigo-400 to-purple-500 rounded-full flex items-center justify-center">
@@ -767,10 +772,10 @@ export default function EventFeedPage({ params }: PageProps) {
                     </div>
                     
                     <div>
-                      <h3 className="text-lg font-bold mb-2" style={{color: '#111827'}}>
+                      <h3 className={`text-lg font-bold mb-2 ${themeStyles.textPrimary}`}>
                         {eventPosts.length - 2} more moments waiting!
                       </h3>
-                      <p className="text-sm" style={{color: '#6B7280'}}>
+                      <p className={`text-sm ${themeStyles.textSecondary}`}>
                         Share your moment to see all {eventPosts.length} photos from this event.
                       </p>
                     </div>
@@ -795,10 +800,10 @@ export default function EventFeedPage({ params }: PageProps) {
                 </div>
                 
                 <div>
-                  <h3 className="text-xl font-bold mb-2" style={{color: '#111827'}}>
+                  <h3 className={`text-xl font-bold mb-2 ${themeStyles.textPrimary}`}>
                     No moments yet!
                   </h3>
-                  <p style={{color: '#6B7280'}}>
+                  <p className={themeStyles.textSecondary}>
                     Be the first to share a moment from {event.title}
                   </p>
                 </div>
@@ -819,9 +824,9 @@ export default function EventFeedPage({ params }: PageProps) {
         {participant.hasPosted && (
           <Link
             href={`/event/${eventUrl}/camera`}
-            className="fixed bottom-6 right-6 w-14 h-14 bg-white rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all active:scale-95 z-10"
+            className={`fixed bottom-6 right-6 w-14 h-14 ${themeStyles.cardBackground} rounded-full flex items-center justify-center shadow-lg hover:shadow-xl transition-all active:scale-95 z-10`}
           >
-            <span className="text-2xl font-light" style={{color: '#111827'}}>+</span>
+            <span className={`text-2xl font-light ${themeStyles.textPrimary}`}>+</span>
           </Link>
         )}
       </main>

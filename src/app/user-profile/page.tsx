@@ -21,6 +21,7 @@ import {
   getEvent
 } from '@/lib/database';
 import { User as UserType, EventParticipant, Post, Event } from '@/types';
+import { getThemeStyles, getThemeInlineStyles, getCardStyles } from '@/lib/theme-utils';
 
 function UserProfilePageContent() {
   const router = useRouter();
@@ -103,10 +104,10 @@ function UserProfilePageContent() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
-          <p style={{color: '#6B7280'}}>Loading profile...</p>
+          <p className="text-gray-600">Loading profile...</p>
         </div>
       </div>
     );
@@ -114,10 +115,10 @@ function UserProfilePageContent() {
 
   if (error || !user || !participant || !event) {
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md mx-auto px-4">
-          <h1 className="text-2xl font-bold mb-4" style={{color: '#111827'}}>Profile Not Found</h1>
-          <p className="mb-6" style={{color: '#6B7280'}}>{error}</p>
+          <h1 className="text-2xl font-bold mb-4 text-gray-900">Profile Not Found</h1>
+          <p className="mb-6 text-gray-600">{error}</p>
           <button
             onClick={handleBack}
             className="inline-block text-white px-6 py-2 rounded-lg transition-colors hover:opacity-90"
@@ -130,24 +131,26 @@ function UserProfilePageContent() {
     );
   }
 
+  const themeStyles = getThemeStyles(event.theme);
+  const themeInlineStyles = getThemeInlineStyles(event.theme);
+
   return (
-    <div className="min-h-screen" style={{backgroundColor: '#F9FAFB'}}>
+    <div className={`min-h-screen ${themeStyles.background}`} style={themeInlineStyles}>
       {/* Header */}
-      <header className="bg-white shadow-sm">
+      <header className={`${themeStyles.cardBackground} shadow-sm`}>
         <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between">
             <button
               onClick={handleBack}
-              className="flex items-center"
-              style={{color: '#6B7280'}}
+              className={`flex items-center ${themeStyles.textSecondary}`}
             >
               <ArrowLeft className="h-5 w-5 mr-2" />
               <span className="text-sm">Back to Feed</span>
             </button>
             
             <div className="text-center">
-              <h1 className="text-lg font-bold" style={{color: '#111827'}}>Profile</h1>
-              <p className="text-sm" style={{color: '#6B7280'}}>{event.title}</p>
+              <h1 className={`text-lg font-bold ${themeStyles.textPrimary}`}>Profile</h1>
+              <p className={`text-sm ${themeStyles.textSecondary}`}>{event.title}</p>
             </div>
 
             <div className="w-20"></div> {/* Spacer for center alignment */}
@@ -158,7 +161,7 @@ function UserProfilePageContent() {
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-8">
         <div className="space-y-6">
           {/* Profile Card */}
-          <div className="bg-white rounded-2xl shadow-sm p-8">
+          <div className={`${getCardStyles(event.theme)} rounded-2xl shadow-sm p-8`}>
             <div className="flex flex-col items-center text-center">
               {/* Avatar */}
               <div className="w-24 h-24 rounded-full flex items-center justify-center mb-6 overflow-hidden" style={{backgroundColor: '#EDE9FE'}}>
@@ -174,12 +177,12 @@ function UserProfilePageContent() {
               </div>
 
               {/* Name */}
-              <h2 className="text-2xl font-bold mb-2" style={{color: '#111827'}}>
+              <h2 className={`text-2xl font-bold mb-2 ${themeStyles.textPrimary}`}>
                 {participant.displayName || user.displayName}
               </h2>
 
               {/* Event Context */}
-              <div className="flex items-center mb-6" style={{color: '#6B7280'}}>
+              <div className={`flex items-center mb-6 ${themeStyles.textSecondary}`}>
                 <MapPin className="h-4 w-4 mr-1" />
                 <span className="text-sm">SyncIn • {event.location}</span>
               </div>
@@ -229,24 +232,20 @@ function UserProfilePageContent() {
           </div>
 
           {/* Event Prompts Answers */}
-          {participant.promptResponses && Object.keys(participant.promptResponses).length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              <h3 className="text-lg font-bold mb-4" style={{color: '#111827'}}>
+          {participant.promptResponses && participant.promptResponses.length > 0 && (
+            <div className={`${getCardStyles(event.theme)} rounded-2xl shadow-sm p-6`}>
+              <h3 className={`text-lg font-bold mb-4 ${themeStyles.textPrimary}`}>
                 About {participant.displayName}
               </h3>
               <div className="space-y-4">
-                {Object.entries((participant.promptResponses as unknown) as Record<string, string>).map(([promptId, answer], index) => {
-                  // Find the corresponding prompt in the event prompts
-                  const prompt = event.prompts?.find(p => p.id === promptId);
-                  const question = prompt?.question || `Question ${index + 1}`;
-                  
+                {participant.promptResponses.map((response, index) => {
                   return (
                     <div key={index} className="border-l-4 pl-4" style={{borderColor: '#6C63FF'}}>
-                      <h4 className="text-sm font-medium mb-1" style={{color: '#6B7280'}}>
-                        {question}
+                      <h4 className={`text-sm font-medium mb-1 ${themeStyles.textSecondary}`}>
+                        {response.question}
                       </h4>
-                      <p className="text-base" style={{color: '#111827'}}>
-                        {answer}
+                      <p className={`text-base ${themeStyles.textPrimary}`}>
+                        {response.answer}
                       </p>
                     </div>
                   );
@@ -256,12 +255,12 @@ function UserProfilePageContent() {
           )}
 
           {/* Posts from this Event */}
-          <div className="bg-white rounded-2xl shadow-sm p-6">
+          <div className={`${getCardStyles(event.theme)} rounded-2xl shadow-sm p-6`}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold" style={{color: '#111827'}}>
+              <h3 className={`text-lg font-bold ${themeStyles.textPrimary}`}>
                 Moments from {event.title}
               </h3>
-              <div className="flex items-center text-sm" style={{color: '#6B7280'}}>
+              <div className={`flex items-center text-sm ${themeStyles.textSecondary}`}>
                 <Camera className="h-4 w-4 mr-1" />
                 {userPosts.length} {userPosts.length === 1 ? 'photo' : 'photos'}
               </div>
@@ -283,11 +282,11 @@ function UserProfilePageContent() {
                       />
                     </div>
                     {post.caption && (
-                      <p className="text-sm mt-2 line-clamp-2" style={{color: '#6B7280'}}>
+                      <p className={`text-sm mt-2 line-clamp-2 ${themeStyles.textSecondary}`}>
                         {post.caption}
                       </p>
                     )}
-                    <div className="flex items-center text-xs mt-1 space-x-3" style={{color: '#9CA3AF'}}>
+                    <div className={`flex items-center text-xs mt-1 space-x-3 ${themeStyles.textMuted}`}>
                       <span>❤️ {post.likesCount}</span>
                       <span>💬 {post.commentsCount}</span>
                     </div>
@@ -299,10 +298,10 @@ function UserProfilePageContent() {
                 <div className="w-16 h-16 mx-auto rounded-full flex items-center justify-center mb-4" style={{backgroundColor: '#F3F4F6'}}>
                   <Camera className="h-8 w-8" style={{color: '#9CA3AF'}} />
                 </div>
-                <p className="text-base font-medium mb-1" style={{color: '#111827'}}>
+                <p className={`text-base font-medium mb-1 ${themeStyles.textPrimary}`}>
                   No moments shared yet
                 </p>
-                <p className="text-sm" style={{color: '#6B7280'}}>
+                <p className={`text-sm ${themeStyles.textSecondary}`}>
                   {participant.displayName} hasn't shared any photos from this event
                 </p>
               </div>

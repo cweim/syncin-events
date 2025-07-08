@@ -25,6 +25,7 @@ import { getCurrentFirebaseUser } from '@/lib/auth';
 import { storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Event, EventParticipant, CreatePostData } from '@/types';
+import { getThemeStyles, getThemeInlineStyles, getCardStyles } from '@/lib/theme-utils';
 
 interface PageProps {
   params: Promise<{ eventUrl: string }>;
@@ -239,22 +240,24 @@ export default function EventCameraPage({ params }: PageProps) {
 
 
   if (loading) {
+    // Use default light theme for loading since event theme isn't loaded yet
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <div className="animate-spin rounded-full h-32 w-32 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
-          <p style={{color: '#6B7280'}}>Loading camera...</p>
+          <p className="text-gray-600">Loading camera...</p>
         </div>
       </div>
     );
   }
 
   if (error || !event || !participant) {
+    // Use default light theme for error since event theme might not be loaded
     return (
-      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center max-w-md mx-auto px-4">
-          <h1 className="text-2xl font-bold mb-4" style={{color: '#111827'}}>Unable to Access Camera</h1>
-          <p className="mb-6" style={{color: '#6B7280'}}>{error}</p>
+          <h1 className="text-2xl font-bold mb-4 text-gray-900">Unable to Access Camera</h1>
+          <p className="mb-6 text-gray-600">{error}</p>
           <Link
             href={`/event/${eventUrl}`}
             className="inline-block text-white px-6 py-2 rounded-lg transition-colors hover:opacity-90"
@@ -267,20 +270,23 @@ export default function EventCameraPage({ params }: PageProps) {
     );
   }
 
+  const themeStyles = getThemeStyles(event.theme);
+  const themeInlineStyles = getThemeInlineStyles(event.theme);
+
   return (
-    <div className="min-h-screen flex flex-col" style={{backgroundColor: '#000000'}}>
+    <div className={`min-h-screen flex flex-col ${themeStyles.background}`} style={themeInlineStyles}>
       {/* Header */}
-      <header className="bg-white shadow-sm relative z-20">
+      <header className={`${themeStyles.cardBackground} shadow-sm relative z-20`}>
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3">
           <div className="flex items-center justify-between">
-            <Link href={`/event/${eventUrl}/feed`} className="flex items-center" style={{color: '#6B7280'}}>
+            <Link href={`/event/${eventUrl}/feed`} className={`flex items-center ${themeStyles.textSecondary}`}>
               <ArrowLeft className="h-5 w-5 mr-2" />
               <span className="text-sm">Back to Feed</span>
             </Link>
             
             <div className="flex items-center">
               <Camera className="h-6 w-6" style={{color: '#6C63FF'}} />
-              <span className="ml-2 text-lg font-bold" style={{color: '#111827'}}>
+              <span className={`ml-2 text-lg font-bold ${themeStyles.textPrimary}`}>
                 {isFirstPostInEvent ? 'First SyncIn!' : 'SyncIn Moment'}
               </span>
             </div>
@@ -291,7 +297,7 @@ export default function EventCameraPage({ params }: PageProps) {
       </header>
 
       {/* Simple Upload Interface */}
-      <div className="flex-1 flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+      <div className={`flex-1 flex items-center justify-center ${themeStyles.background}`}>
         <div className="text-center max-w-md mx-auto px-6">
           {/* Welcome Message */}
           {isFirstPostInEvent && (
@@ -317,7 +323,7 @@ export default function EventCameraPage({ params }: PageProps) {
 
           {/* Fun Description */}
           <div className="mt-6 text-center">
-            <p className="text-sm" style={{color: '#6B7280'}}>
+            <p className={`text-sm ${themeStyles.textSecondary}`}>
               📸 Capture your moment and share it with everyone! ✨
             </p>
           </div>
@@ -336,11 +342,11 @@ export default function EventCameraPage({ params }: PageProps) {
       {/* Caption Modal */}
       {showCaptionModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto">
+          <div className={`${themeStyles.cardBackground} rounded-xl max-w-md w-full max-h-[90vh] overflow-y-auto`}>
             <div className="p-6">
               {/* Modal Header */}
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold" style={{color: '#111827'}}>
+                <h3 className={`text-lg font-semibold ${themeStyles.textPrimary}`}>
                   Add Caption
                 </h3>
                 <div className="text-center">
@@ -353,8 +359,7 @@ export default function EventCameraPage({ params }: PageProps) {
                     setPostCaption('');
                     setPostTags('');
                   }}
-                  className="p-1 hover:bg-gray-100 rounded transition-colors"
-                  style={{color: '#6B7280'}}
+                  className={`p-1 hover:opacity-80 rounded transition-colors ${themeStyles.textSecondary}`}
                 >
                   <X className="h-5 w-5" />
                 </button>
@@ -376,38 +381,38 @@ export default function EventCameraPage({ params }: PageProps) {
 
               {/* Caption */}
               <div className="mb-4">
-                <label className="block text-sm font-medium mb-2" style={{color: '#111827'}}>
+                <label className={`block text-sm font-medium mb-2 ${themeStyles.textPrimary}`}>
                   Caption *
                 </label>
                 <textarea
                   value={postCaption}
                   onChange={(e) => setPostCaption(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:border-transparent resize-none"
-                  style={{color: '#111827', '--tw-ring-color': '#6C63FF'} as React.CSSProperties}
+                  className={`w-full px-3 py-2 ${themeStyles.inputBorder} rounded-lg focus:ring-2 focus:border-transparent resize-none ${themeStyles.inputBackground} ${themeStyles.textPrimary}`}
+                  style={{'--tw-ring-color': '#6C63FF'} as React.CSSProperties}
                   placeholder="Share what's happening at this moment..."
                   rows={3}
                   maxLength={300}
                   required
                 />
-                <div className="text-xs text-right mt-1" style={{color: '#9CA3AF'}}>
+                <div className={`text-xs text-right mt-1 ${themeStyles.textMuted}`}>
                   {postCaption.length}/300
                 </div>
               </div>
 
               {/* Tags */}
               <div className="mb-6">
-                <label className="block text-sm font-medium mb-2" style={{color: '#111827'}}>
+                <label className={`block text-sm font-medium mb-2 ${themeStyles.textPrimary}`}>
                   Tags (optional)
                 </label>
                 <input
                   type="text"
                   value={postTags}
                   onChange={(e) => setPostTags(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:border-transparent"
-                  style={{color: '#111827', '--tw-ring-color': '#6C63FF'} as React.CSSProperties}
+                  className={`w-full px-3 py-2 ${themeStyles.inputBorder} rounded-lg focus:ring-2 focus:border-transparent ${themeStyles.inputBackground} ${themeStyles.textPrimary}`}
+                  style={{'--tw-ring-color': '#6C63FF'} as React.CSSProperties}
                   placeholder="#networking #fun #event"
                 />
-                <p className="text-xs mt-1" style={{color: '#9CA3AF'}}>
+                <p className={`text-xs mt-1 ${themeStyles.textMuted}`}>
                   Add hashtags separated by spaces (max 10)
                 </p>
               </div>
