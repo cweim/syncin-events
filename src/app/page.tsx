@@ -23,13 +23,13 @@ export default function HomePage() {
                 Pricing
               </Link>
               <Link
-                href="/auth/signin"
+                href="/admin/login"
                 className="text-gray-600 hover:text-gray-900 font-medium"
               >
-                Sign In
+                Organizer Login
               </Link>
               <Link
-                href="/dashboard"
+                href="/admin/login"
                 className="px-4 py-2 rounded-lg transition-colors text-white font-medium hover:opacity-90"
                 style={{backgroundColor: '#6C63FF'}}
               >

@@ -22,6 +22,7 @@ export default function EventPromptsPage({ params }: PageProps) {
   const [loading, setLoading] = useState(true);
   const [eventUrl, setEventUrl] = useState<string>('');
   const [responses, setResponses] = useState<Record<string, string | string[]>>({});
+  const [othersText, setOthersText] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -120,12 +121,26 @@ export default function EventPromptsPage({ params }: PageProps) {
         }
       } else {
         // Remove option
-        return { ...prev, [promptId]: currentResponses.filter(item => item !== option) };
+        const newResponses = currentResponses.filter(item => item !== option);
+        // If removing "Others", also clear the custom text
+        if (option === 'Others') {
+          setOthersText(prevOthers => {
+            const newOthers = { ...prevOthers };
+            delete newOthers[promptId];
+            return newOthers;
+          });
+        }
+        return { ...prev, [promptId]: newResponses };
       }
       
       return prev;
     });
     setError(''); // Clear error when user makes changes
+  };
+
+  const handleOthersTextChange = (promptId: string, text: string) => {
+    setOthersText(prev => ({ ...prev, [promptId]: text }));
+    setError(''); // Clear error when user types
   };
 
   const getOptionsArray = (options: any): string[] => {
@@ -168,6 +183,11 @@ export default function EventPromptsPage({ params }: PageProps) {
             setError(`Please select at least one option for: ${prompt.question}`);
             return false;
           }
+          // If "Others" is selected, ensure custom text is provided
+          if (response.includes('Others') && (!othersText[prompt.id] || othersText[prompt.id].trim() === '')) {
+            setError(`Please provide custom text for "Others" option in: ${prompt.question}`);
+            return false;
+          }
         } else {
           // For text, check if response is not empty
           if (!response || (typeof response === 'string' && response.trim() === '')) {
@@ -199,8 +219,14 @@ export default function EventPromptsPage({ params }: PageProps) {
         if (prompt) {
           let answerText: string;
           if (Array.isArray(response)) {
-            // For multiple choice, join selected options with commas
-            answerText = response.join(', ');
+            // For multiple choice, process options and include custom "Others" text
+            const processedOptions = response.map(option => {
+              if (option === 'Others' && othersText[promptId]) {
+                return `Others: ${othersText[promptId]}`;
+              }
+              return option;
+            });
+            answerText = processedOptions.join(', ');
           } else {
             // For text responses, use as is
             answerText = response;
@@ -284,7 +310,12 @@ export default function EventPromptsPage({ params }: PageProps) {
     if (!p || !p.required) return false;
     const response = responses[p.id];
     if (p.type === 'multipleChoice') {
-      return Array.isArray(response) && response.length > 0;
+      let hasValidResponse = Array.isArray(response) && response.length > 0;
+      // If "Others" is selected, ensure custom text is provided
+      if (hasValidResponse && response.includes('Others')) {
+        hasValidResponse = othersText[p.id] && othersText[p.id].trim() !== '';
+      }
+      return hasValidResponse;
     } else {
       return response && typeof response === 'string' && response.trim() !== '';
     }
@@ -396,19 +427,49 @@ export default function EventPromptsPage({ params }: PageProps) {
                             const optionsArray = getOptionsArray(prompt.options);
                             const selectedOptions = Array.isArray(responses[prompt.id]) ? responses[prompt.id] as string[] : [];
                             
-                            if (optionsArray.length > 0) {
-                              return optionsArray.map((option, optionIndex) => (
-                                <label key={optionIndex} className="flex items-center cursor-pointer">
-                                  <input
-                                    type="checkbox"
-                                    checked={selectedOptions.includes(option)}
-                                    onChange={(e) => handleMultipleChoiceChange(prompt.id, option, e.target.checked)}
-                                    className="mr-3"
-                                    style={{accentColor: '#6C63FF'}}
-                                  />
-                                  <span className={themeStyles.textPrimary}>{option}</span>
-                                </label>
-                              ));
+                            if (optionsArray.length > 0 || prompt.allowOthers) {
+                              const allOptions = [...optionsArray];
+                              if (prompt.allowOthers) {
+                                allOptions.push('Others');
+                              }
+                              
+                              return (
+                                <div className="space-y-3">
+                                  {allOptions.map((option, optionIndex) => (
+                                    <div key={optionIndex}>
+                                      <label className="flex items-center cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={selectedOptions.includes(option)}
+                                          onChange={(e) => handleMultipleChoiceChange(prompt.id, option, e.target.checked)}
+                                          className="mr-3"
+                                          style={{accentColor: '#6C63FF'}}
+                                        />
+                                        <span className={themeStyles.textPrimary}>{option}</span>
+                                      </label>
+                                      
+                                      {/* Show text input when "Others" is selected */}
+                                      {option === 'Others' && selectedOptions.includes('Others') && (
+                                        <div className="mt-2 ml-6">
+                                          <input
+                                            type="text"
+                                            value={othersText[prompt.id] || ''}
+                                            onChange={(e) => handleOthersTextChange(prompt.id, e.target.value)}
+                                            className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-transparent ${themeStyles.inputBackground} ${themeStyles.inputBorder} ${themeStyles.textPrimary}`}
+                                            placeholder="Please specify..."
+                                            maxLength={200}
+                                          />
+                                          {othersText[prompt.id] && (
+                                            <div className={`mt-1 text-xs text-right ${themeStyles.textMuted}`}>
+                                              {othersText[prompt.id].length}/200
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
                             } else {
                               return (
                                 <div className={`p-4 border rounded-lg ${event.theme === 'dark' ? 'border-orange-800 bg-orange-900/20' : 'border-orange-200 bg-orange-50'}`}>
@@ -445,9 +506,17 @@ export default function EventPromptsPage({ params }: PageProps) {
                       {/* Completion indicator */}
                       {(() => {
                         const response = responses[prompt.id];
-                        const isCompleted = prompt.type === 'multipleChoice' 
-                          ? Array.isArray(response) && response.length > 0
-                          : response && typeof response === 'string' && response.trim() !== '';
+                        let isCompleted = false;
+                        
+                        if (prompt.type === 'multipleChoice') {
+                          isCompleted = Array.isArray(response) && response.length > 0;
+                          // If "Others" is selected, ensure custom text is provided
+                          if (isCompleted && response.includes('Others')) {
+                            isCompleted = othersText[prompt.id] && othersText[prompt.id].trim() !== '';
+                          }
+                        } else {
+                          isCompleted = response && typeof response === 'string' && response.trim() !== '';
+                        }
                         
                         if (isCompleted) {
                           return (

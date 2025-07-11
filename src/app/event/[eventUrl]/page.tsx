@@ -174,7 +174,7 @@ export default function EventLandingPage({ params }: PageProps) {
             className="h-48 md:h-64 bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center"
             style={{backgroundColor: '#6C63FF'}}
           >
-            {event.coverImageUrl ? (
+            {event.coverImageUrl && event.coverImageUrl.trim() !== '' ? (
               <img 
                 src={event.coverImageUrl} 
                 alt={event.title}

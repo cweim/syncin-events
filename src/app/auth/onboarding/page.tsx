@@ -14,7 +14,6 @@ function OnboardingPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
   
   const [formData, setFormData] = useState({
     username: '',
@@ -24,13 +23,14 @@ function OnboardingPageContent() {
     facebook: ''
   });
   const [profilePhotoPreview, setProfilePhotoPreview] = useState<string>('');
-  const [showCamera, setShowCamera] = useState(false);
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   // Get redirect URL from query params
   const redirectUrl = searchParams.get('redirect') || '/dashboard';
+  
+  // Check if this is an event-related onboarding
+  const isEventFlow = redirectUrl.includes('/event/');
 
   const handleInputChange = (field: keyof typeof formData, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -51,52 +51,6 @@ function OnboardingPageContent() {
     }
   };
 
-  const startCamera = async () => {
-    try {
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
-        audio: false
-      });
-      setStream(mediaStream);
-      setShowCamera(true);
-      
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
-    } catch (error) {
-      console.error('Error accessing camera:', error);
-      setError('Unable to access camera. Please use file upload instead.');
-    }
-  };
-
-  const stopCamera = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      setStream(null);
-    }
-    setShowCamera(false);
-  };
-
-  const capturePhoto = () => {
-    if (!videoRef.current) return;
-
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    if (!context) return;
-
-    canvas.width = videoRef.current.videoWidth;
-    canvas.height = videoRef.current.videoHeight;
-    context.drawImage(videoRef.current, 0, 0);
-
-    canvas.toBlob((blob) => {
-      if (blob) {
-        const file = new File([blob], 'profile-photo.jpg', { type: 'image/jpeg' });
-        setFormData(prev => ({ ...prev, profilePhoto: file }));
-        setProfilePhotoPreview(canvas.toDataURL());
-        stopCamera();
-      }
-    }, 'image/jpeg', 0.8);
-  };
 
   const uploadProfilePhoto = async (file: File): Promise<string> => {
     const user = getCurrentFirebaseUser();
@@ -120,6 +74,16 @@ function OnboardingPageContent() {
       setError('Profile photo is required');
       return false;
     }
+    
+    // Check if at least one social media is provided for event attendees
+    if (isEventFlow) {
+      const hasAnySocial = formData.instagram.trim() || formData.linkedin.trim() || formData.facebook.trim();
+      if (!hasAnySocial) {
+        setError('Please provide at least one social media handle to help others connect with you at the event');
+        return false;
+      }
+    }
+    
     return true;
   };
 
@@ -153,7 +117,13 @@ function OnboardingPageContent() {
       });
 
       // Redirect to intended destination
-      router.push(redirectUrl);
+      if (isEventFlow) {
+        // For event flows, redirect to the event prompts page
+        router.push(redirectUrl);
+      } else {
+        // For non-event flows (organizers), redirect to dashboard
+        router.push(redirectUrl);
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to complete setup';
       setError(errorMessage);
@@ -225,55 +195,15 @@ function OnboardingPageContent() {
                   </div>
                 </div>
 
-                {/* Camera Modal */}
-                {showCamera && (
-                  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded-lg p-6 max-w-sm mx-4">
-                      <video
-                        ref={videoRef}
-                        autoPlay
-                        playsInline
-                        className="w-full rounded-lg mb-4"
-                      />
-                      <div className="flex space-x-2">
-                        <button
-                          type="button"
-                          onClick={capturePhoto}
-                          className="flex-1 text-white py-2 rounded-lg font-medium"
-                          style={{backgroundColor: '#6C63FF'}}
-                        >
-                          Capture
-                        </button>
-                        <button
-                          type="button"
-                          onClick={stopCamera}
-                          className="flex-1 bg-gray-500 text-white py-2 rounded-lg font-medium"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Photo Upload Options */}
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    type="button"
-                    onClick={startCamera}
-                    className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <Camera className="h-5 w-5 mr-2" style={{color: '#6B7280'}} />
-                    <span className="text-sm" style={{color: '#6B7280'}}>Take Photo</span>
-                  </button>
-                  
+                {/* Photo Upload Option */}
+                <div className="flex justify-center">
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="flex items-center justify-center px-4 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex items-center justify-center px-6 py-3 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
                   >
                     <Upload className="h-5 w-5 mr-2" style={{color: '#6B7280'}} />
-                    <span className="text-sm" style={{color: '#6B7280'}}>Upload</span>
+                    <span className="text-sm" style={{color: '#6B7280'}}>Upload Photo</span>
                   </button>
                 </div>
 
@@ -306,13 +236,16 @@ function OnboardingPageContent() {
                 </p>
               </div>
 
-              {/* Social Profiles (Optional) */}
+              {/* Social Profiles */}
               <div>
                 <h3 className="text-sm font-medium mb-3" style={{color: '#111827'}}>
-                  Social Profiles (Optional)
+                  Social Profiles {isEventFlow ? '*' : '(Optional)'}
                 </h3>
                 <p className="text-xs mb-4" style={{color: '#6B7280'}}>
-                  Help others connect with you outside the event
+                  {isEventFlow 
+                    ? 'Please provide at least one social media handle to help others connect with you at the event'
+                    : 'Help others connect with you outside events'
+                  }
                 </p>
 
                 {/* Instagram */}
@@ -388,7 +321,8 @@ function OnboardingPageContent() {
             {/* Required Fields Notice */}
             <div className="mt-6 text-center">
               <p className="text-xs" style={{color: '#9CA3AF'}}>
-                * Required fields • Social profiles are optional and can be updated later
+                * Required fields {isEventFlow && '• At least one social media handle is required for event attendees'}
+                {!isEventFlow && '• Social profiles are optional and can be updated later'}
               </p>
             </div>
           </div>

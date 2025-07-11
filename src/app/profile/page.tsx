@@ -140,6 +140,16 @@ export default function ProfilePage() {
       setError('Display name must be at least 2 characters long');
       return false;
     }
+    
+    // Check if at least one social media is provided for attendees
+    if (userData?.role === 'attendee' || userData?.role === 'both') {
+      const hasAnySocial = formData.instagram.trim() || formData.linkedin.trim() || formData.facebook.trim();
+      if (!hasAnySocial) {
+        setError('Please provide at least one social media handle to help others connect with you at events');
+        return false;
+      }
+    }
+    
     return true;
   };
 
@@ -341,10 +351,13 @@ export default function ProfilePage() {
               {/* Social Profiles */}
               <div>
                 <h3 className="text-sm font-medium mb-3" style={{color: '#111827'}}>
-                  Social Profiles (Optional)
+                  Social Profiles {(userData?.role === 'attendee' || userData?.role === 'both') ? '*' : '(Optional)'}
                 </h3>
                 <p className="text-xs mb-4" style={{color: '#6B7280'}}>
-                  Help others connect with you outside events
+                  {(userData?.role === 'attendee' || userData?.role === 'both') 
+                    ? 'Please provide at least one social media handle to help others connect with you at events'
+                    : 'Help others connect with you outside events'
+                  }
                 </p>
 
                 {/* Instagram */}

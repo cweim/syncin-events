@@ -64,9 +64,9 @@ function SignInPageContent() {
     try {
       const { user, isNewUser } = await signInWithGoogle();
       
-      // For new users, redirect to onboarding
+      // For new users, redirect to onboarding with redirect parameter
       if (isNewUser) {
-        router.push('/auth/onboarding');
+        router.push(`/auth/onboarding?redirect=${encodeURIComponent(redirectUrl)}`);
       } else {
         router.push(redirectUrl);
       }

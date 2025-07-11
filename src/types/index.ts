@@ -46,6 +46,7 @@ export interface EventPrompt {
   type: 'text' | 'multipleChoice';
   options?: string[];           // For multiple choice
   required: boolean;
+  allowOthers?: boolean;        // For multiple choice with "Others" option
 }
 
 export interface EventBranding {
@@ -137,14 +138,25 @@ export interface ImageMetadata {
   mimeType: string;
 }
 
+export interface VideoMetadata {
+  width: number;
+  height: number;
+  size: number;
+  duration: number;  // in seconds
+  mimeType: string;
+  thumbnailUrl?: string;  // Generated thumbnail for video preview
+}
+
 export interface Post {
   id: string;
   eventId: string;              // Reference to events
   participantId: string;        // Reference to eventParticipants
   userId: string;               // Reference to users (always required now)
   
-  // Content
-  imageUrl: string;             // Firebase Storage URL
+  // Content - Updated to support both images and videos
+  mediaType: 'image' | 'video';  // Type of media content
+  imageUrl?: string;            // Firebase Storage URL for images
+  videoUrl?: string;            // Firebase Storage URL for videos
   caption?: string;
   tags?: string[];              // e.g., ["#teamAlpha", "#panel2"]
   
@@ -165,8 +177,9 @@ export interface Post {
   likesCount: number;
   commentsCount: number;
   
-  // Technical
+  // Technical - Updated to support both media types
   imageMetadata?: ImageMetadata;
+  videoMetadata?: VideoMetadata;
   
   // ✅ NEW: Author profile photo support
   authorProfilePicUrl?: string;

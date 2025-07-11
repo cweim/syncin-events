@@ -14,7 +14,8 @@ import {
   Upload, 
   ArrowLeft, 
   X,
-  Image as ImageIcon
+  Image as ImageIcon,
+  Video
 } from 'lucide-react';
 import { 
   getEventByUrl, 
@@ -25,6 +26,7 @@ import { getCurrentFirebaseUser } from '@/lib/auth';
 import { storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Event, EventParticipant, CreatePostData } from '@/types';
+import VideoProcessor from '@/lib/video-processing';
 import { getThemeStyles, getThemeInlineStyles, getCardStyles } from '@/lib/theme-utils';
 
 interface PageProps {
@@ -44,8 +46,11 @@ export default function EventCameraPage({ params }: PageProps) {
   const [error, setError] = useState('');
   const [currentUser, setCurrentUser] = useState<any>(null);
 
-  // Photo states
+  // Media states
   const [capturedPhoto, setCapturedPhoto] = useState<string>('');
+  const [capturedVideo, setCapturedVideo] = useState<File | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string>('');
+  const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
   const [isFirstPostInEvent, setIsFirstPostInEvent] = useState(false);
 
   // Caption states (for inline caption like BeReal)
@@ -123,15 +128,59 @@ export default function EventCameraPage({ params }: PageProps) {
   }, [eventUrl, currentUser, router]);
 
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setCapturedPhoto(e.target?.result as string);
+    if (!file) return;
+
+    try {
+      if (file.type.startsWith('image/')) {
+        // Handle image file
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setCapturedPhoto(e.target?.result as string);
+          setMediaType('image');
+          setCapturedVideo(null);
+          // Clean up old video preview blob URL
+          if (videoPreview && videoPreview.startsWith('blob:')) {
+            URL.revokeObjectURL(videoPreview);
+          }
+          setVideoPreview('');
+          setShowCaptionModal(true);
+        };
+        reader.readAsDataURL(file);
+      } else if (file.type.startsWith('video/')) {
+        // Handle video file
+        const validation = VideoProcessor.validateVideo(file);
+        if (!validation.isValid) {
+          alert(validation.error);
+          return;
+        }
+
+        // Check video duration
+        try {
+          const duration = await VideoProcessor.checkVideoDuration(file);
+          if (duration >= 10) {
+            alert('Video must be less than 10 seconds long');
+            return;
+          }
+        } catch (error) {
+          alert('Failed to process video. Please try again.');
+          return;
+        }
+
+        // Set video for preview
+        const videoUrl = URL.createObjectURL(file);
+        setCapturedVideo(file);
+        setVideoPreview(videoUrl);
+        setMediaType('video');
+        setCapturedPhoto('');
         setShowCaptionModal(true);
-      };
-      reader.readAsDataURL(file);
+      } else {
+        alert('Please select an image or video file');
+      }
+    } catch (error) {
+      console.error('Error processing file:', error);
+      alert('Failed to process file. Please try again.');
     }
   };
 
@@ -148,11 +197,23 @@ export default function EventCameraPage({ params }: PageProps) {
     return await getDownloadURL(snapshot.ref);
   };
 
+  const uploadVideo = async (file: File): Promise<{ videoUrl: string; thumbnailUrl?: string }> => {
+    if (!event || !currentUser) throw new Error('Missing required data');
+
+    const videoProcessor = new VideoProcessor();
+    const result = await videoProcessor.processAndUpload(file, event.id, currentUser.uid);
+    
+    return {
+      videoUrl: result.url,
+      thumbnailUrl: result.thumbnailUrl
+    };
+  };
+
   const handlePostSubmit = async () => {
-    if (!capturedPhoto || !event || !participant || !currentUser) return;
+    if ((!capturedPhoto && !capturedVideo) || !event || !participant || !currentUser) return;
   
     if (!postCaption.trim()) {
-      alert('Please add a caption for your photo.');
+      alert(`Please add a caption for your ${mediaType}.`);
       return;
     }
 
@@ -160,11 +221,22 @@ export default function EventCameraPage({ params }: PageProps) {
     setError('');
 
     try {
-      console.log('📝 Starting post submission...');
+      console.log(`📝 Starting ${mediaType} post submission...`);
 
-      // Upload photo
-      const imageUrl = await uploadPhoto(capturedPhoto);
-      console.log('📸 Photo uploaded:', imageUrl);
+      let mediaUrl = '';
+      let thumbnailUrl = '';
+
+      if (mediaType === 'image' && capturedPhoto) {
+        // Upload photo
+        mediaUrl = await uploadPhoto(capturedPhoto);
+        console.log('📸 Photo uploaded:', mediaUrl);
+      } else if (mediaType === 'video' && capturedVideo) {
+        // Upload video
+        const uploadResult = await uploadVideo(capturedVideo);
+        mediaUrl = uploadResult.videoUrl;
+        thumbnailUrl = uploadResult.thumbnailUrl || '';
+        console.log('🎥 Video uploaded:', mediaUrl);
+      }
 
       // Parse tags and clean them
       const tagsArray = postTags
@@ -181,10 +253,27 @@ export default function EventCameraPage({ params }: PageProps) {
         eventId: event.id,
         participantId: participant.id,
         userId: currentUser.uid,
-        imageUrl,
+        mediaType,
         isReported: false,
         isApproved: false,
       };
+
+      // Add media URL based on type
+      if (mediaType === 'image') {
+        postData.imageUrl = mediaUrl;
+      } else if (mediaType === 'video') {
+        postData.videoUrl = mediaUrl;
+        if (thumbnailUrl) {
+          postData.videoMetadata = {
+            thumbnailUrl,
+            duration: 0, // Will be updated with actual duration
+            width: 0,    // Will be updated with actual dimensions
+            height: 0,   // Will be updated with actual dimensions
+            size: capturedVideo?.size || 0,
+            mimeType: capturedVideo?.type || 'video/mp4'
+          };
+        }
+      }
 
       // Only add optional fields if they have values
       if (postCaption.trim()) {
@@ -212,6 +301,12 @@ export default function EventCameraPage({ params }: PageProps) {
       // Reset modal
       setShowCaptionModal(false);
       setCapturedPhoto('');
+      setCapturedVideo(null);
+      // Clean up blob URL before resetting
+      if (videoPreview && videoPreview.startsWith('blob:')) {
+        URL.revokeObjectURL(videoPreview);
+      }
+      setVideoPreview('');
       setPostCaption('');
       setPostTags('');
 
@@ -219,8 +314,8 @@ export default function EventCameraPage({ params }: PageProps) {
 
       // Show success message
       const approvalMessage = (!event.moderationEnabled || !event.requiresApproval) 
-        ? 'SyncIn moment shared successfully! 🎉' 
-        : 'Moment submitted for review! 📋 It will appear once approved.';
+        ? `SyncIn ${mediaType} shared successfully! 🎉` 
+        : `${mediaType} submitted for review! 📋 It will appear once approved.`;
       
       alert(approvalMessage);
 
@@ -230,9 +325,9 @@ export default function EventCameraPage({ params }: PageProps) {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to share moment';
       setError(errorMessage);
-      console.error('💥 Error posting photo:', error);
+      console.error(`💥 Error posting ${mediaType}:`, error);
       
-      alert(`Failed to share moment: ${errorMessage}`);
+      alert(`Failed to share ${mediaType}: ${errorMessage}`);
     } finally {
       setIsPosting(false);
     }
@@ -311,20 +406,25 @@ export default function EventCameraPage({ params }: PageProps) {
             </div>
           )}
 
-          {/* Take Photo Button */}
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="w-full max-w-sm mx-auto px-8 py-6 rounded-2xl font-semibold text-lg transition-colors hover:opacity-90 flex items-center justify-center space-x-3 shadow-lg"
-            style={{backgroundColor: '#6C63FF', color: 'white'}}
-          >
-            <Camera className="h-8 w-8" />
-            <span>Click to Take Photo</span>
-          </button>
+          {/* Upload Button */}
+          <div className="flex justify-center max-w-sm mx-auto">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full px-8 py-8 rounded-2xl font-bold text-xl transition-colors hover:opacity-90 flex items-center justify-center space-x-4 shadow-lg"
+              style={{backgroundColor: '#6C63FF', color: 'white'}}
+            >
+              <div className="flex items-center space-x-2">
+                <Camera className="h-8 w-8" />
+                <Video className="h-8 w-8" />
+              </div>
+              <span>Take Photo/Video</span>
+            </button>
+          </div>
 
           {/* Fun Description */}
           <div className="mt-6 text-center">
             <p className={`text-sm ${themeStyles.textSecondary}`}>
-              📸 Capture your moment and share it with everyone! ✨
+              📸 Tap to select photos or 🎥 videos (max 10 seconds) from your device! ✨
             </p>
           </div>
 
@@ -365,13 +465,33 @@ export default function EventCameraPage({ params }: PageProps) {
                 </button>
               </div>
 
-              {/* Photo Preview */}
-              <div className="mb-4">
-                <img 
-                  src={capturedPhoto} 
-                  alt="Captured photo"
-                  className="w-full h-48 object-cover rounded-lg"
-                />
+              {/* Media Preview */}
+              <div className="mb-4 relative">
+                {mediaType === 'image' ? (
+                  <img 
+                    src={capturedPhoto} 
+                    alt="Captured photo"
+                    className="w-full h-48 object-cover rounded-lg"
+                  />
+                ) : (
+                  videoPreview && videoPreview.trim() !== '' ? (
+                    <video 
+                      src={videoPreview} 
+                      className="w-full h-48 object-cover rounded-lg"
+                      controls
+                      muted
+                      autoPlay
+                      loop
+                    />
+                  ) : (
+                    <div className="w-full h-48 bg-gray-200 flex items-center justify-center rounded-lg">
+                      <div className="text-center text-gray-500">
+                        <Video className="h-8 w-8 mx-auto mb-2" />
+                        <p className="text-sm">No video preview</p>
+                      </div>
+                    </div>
+                  )
+                )}
                 {isFirstPostInEvent && (
                   <div className="absolute top-2 right-2 px-3 py-1 rounded-full text-xs font-bold text-white" style={{backgroundColor: '#22C55E'}}>
                     🎉 First Moment!
@@ -448,6 +568,12 @@ export default function EventCameraPage({ params }: PageProps) {
                   onClick={() => {
                     setShowCaptionModal(false);
                     setCapturedPhoto('');
+                    setCapturedVideo(null);
+                    // Clean up blob URL before resetting
+                    if (videoPreview && videoPreview.startsWith('blob:')) {
+                      URL.revokeObjectURL(videoPreview);
+                    }
+                    setVideoPreview('');
                     setPostCaption('');
                     setPostTags('');
                   }}
@@ -485,7 +611,7 @@ export default function EventCameraPage({ params }: PageProps) {
       <input
         ref={fileInputRef}
         type="file"
-        accept="image/*"
+        accept="image/*,video/*"
         capture="environment"
         onChange={handleFileUpload}
         style={{ display: 'none' }}

@@ -22,12 +22,16 @@ import {
   Video,
   Sparkles,
   Play,
-  Loader2
+  Loader2,
+  BarChart3,
+  FileText,
+  FileSpreadsheet
 } from 'lucide-react';
 import QRCodeReact from 'react-qr-code';
-import { getEvent, getAllEventPosts, deleteEvent } from '@/lib/database';
-import { downloadPhoto, downloadAllPhotos } from '@/lib/download-utils';
-import { Event, Post } from '@/types';
+import { getEvent, getAllEventPosts, deleteEvent, getEventParticipants, getUser } from '@/lib/database';
+import { getCurrentFirebaseUser } from '@/lib/auth';
+import { downloadPhoto, downloadVideo, downloadPostMedia, downloadAllMedia } from '@/lib/download-utils';
+import { Event, Post, EventParticipant, User } from '@/types';
 import { useRouter } from 'next/navigation';
 import { useReelGeneration, usePhotoUpload } from '@/hooks/useReelGeneration';
 import { useReelAnalytics } from '@/components/ReelAnalytics';
@@ -40,7 +44,7 @@ export default function EventDetailsPage({ params }: PageProps) {
   const router = useRouter();
   const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'qr' | 'album' | 'reels' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'qr' | 'album' | 'reels' | 'analytics' | 'settings'>('overview');
   const [copySuccess, setCopySuccess] = useState(false);
   const [eventId, setEventId] = useState<string>('');
   
@@ -61,6 +65,14 @@ export default function EventDetailsPage({ params }: PageProps) {
   
   // Reel generation states
   const [generationError, setGenerationError] = useState<string>('');
+  
+  // Analytics tab states
+  const [participants, setParticipants] = useState<EventParticipant[]>([]);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  
+  // Authentication states
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   
   // API hooks for reel generation
   const {
@@ -87,6 +99,40 @@ export default function EventDetailsPage({ params }: PageProps) {
     }
   }, [currentTask?.status, currentTask?.taskId, analytics]);
 
+  // Authentication check
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const firebaseUser = getCurrentFirebaseUser();
+        if (!firebaseUser) {
+          router.push('/admin/login');
+          return;
+        }
+
+        const user = await getUser(firebaseUser.uid);
+        if (!user) {
+          router.push('/admin/login');
+          return;
+        }
+
+        // Check if user is an organizer
+        if (user.role !== 'organizer') {
+          router.push('/');
+          return;
+        }
+
+        setCurrentUser(user);
+      } catch (error) {
+        console.error('Auth check error:', error);
+        router.push('/admin/login');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
+
   useEffect(() => {
     const loadEventId = async () => {
       try {
@@ -103,8 +149,8 @@ export default function EventDetailsPage({ params }: PageProps) {
   }, [params]);
 
   useEffect(() => {
-    if (!eventId) {
-      console.log('⏳ Waiting for eventId...');
+    if (!eventId || !currentUser) {
+      console.log('⏳ Waiting for eventId and user authentication...');
       return;
     }
 
@@ -123,6 +169,13 @@ export default function EventDetailsPage({ params }: PageProps) {
         if (!eventData) {
           throw new Error('Event not found in database');
         }
+
+        // Check if the current user is the organizer of this event
+        if (eventData.organizerId !== currentUser.id) {
+          console.error('❌ User is not the organizer of this event');
+          router.push('/dashboard');
+          return;
+        }
         
         setEvent(eventData);
       } catch (error) {
@@ -134,12 +187,19 @@ export default function EventDetailsPage({ params }: PageProps) {
     };
 
     loadEvent();
-  }, [eventId]);
+  }, [eventId, currentUser, router]);
 
   // Load album data when album tab is activated
   useEffect(() => {
     if (activeTab === 'album' && event && !albumLoading && allPosts.length === 0) {
       loadAlbumData();
+    }
+  }, [activeTab, event]);
+
+  // Load analytics data when analytics tab is activated
+  useEffect(() => {
+    if (activeTab === 'analytics' && event && !analyticsLoading && participants.length === 0) {
+      loadAnalyticsData();
     }
   }, [activeTab, event]);
 
@@ -164,7 +224,8 @@ export default function EventDetailsPage({ params }: PageProps) {
         
         // Test if we can fetch the image directly
         const testImageUrl = postsWithImages[0].imageUrl;
-        fetch(testImageUrl, { method: 'HEAD' })
+        if (testImageUrl) {
+          fetch(testImageUrl, { method: 'HEAD' })
           .then(response => {
             console.log('🌐 Direct image fetch test:', {
               status: response.status,
@@ -179,6 +240,7 @@ export default function EventDetailsPage({ params }: PageProps) {
           .catch(error => {
             console.log('❌ Direct image fetch failed:', error);
           });
+        }
       }
       
       if (postsWithoutImages.length > 0) {
@@ -189,6 +251,24 @@ export default function EventDetailsPage({ params }: PageProps) {
       alert('Failed to load album photos. Please try refreshing the page.');
     } finally {
       setAlbumLoading(false);
+    }
+  };
+
+  const loadAnalyticsData = async () => {
+    if (!event) return;
+    
+    setAnalyticsLoading(true);
+    try {
+      console.log('🔄 Loading analytics data for event:', event.id);
+      const eventParticipants = await getEventParticipants(event.id);
+      setParticipants(eventParticipants);
+      console.log(`📊 Loaded ${eventParticipants.length} participants for analytics`);
+      console.log('📋 Participants sample:', eventParticipants.slice(0, 2));
+    } catch (error) {
+      console.error('❌ Error loading analytics data:', error);
+      alert('Failed to load analytics data. Please try refreshing the page.');
+    } finally {
+      setAnalyticsLoading(false);
     }
   };
 
@@ -291,7 +371,25 @@ export default function EventDetailsPage({ params }: PageProps) {
     }
   };
 
-  // ✅ UPDATED: Better download function with CORS handling
+  // ✅ UPDATED: Better download function with CORS handling for both images and videos
+  const handleDownloadMedia = async (post: Post, customFilename?: string) => {
+    try {
+      if (customFilename) {
+        if (post.mediaType === 'video' && post.videoUrl) {
+          await downloadVideo(post.videoUrl, customFilename);
+        } else if (post.mediaType === 'image' && post.imageUrl) {
+          await downloadPhoto(post.imageUrl, customFilename);
+        }
+      } else {
+        await downloadPostMedia(post, event?.title || 'event');
+      }
+    } catch (error) {
+      console.error('Download failed:', error);
+      // Don't show alert for CORS errors - the download utility handles this
+    }
+  };
+
+  // ✅ Legacy function for backward compatibility
   const handleDownloadPhoto = async (imageUrl: string, filename: string) => {
     try {
       await downloadPhoto(imageUrl, filename);
@@ -301,14 +399,14 @@ export default function EventDetailsPage({ params }: PageProps) {
     }
   };
 
-  // ✅ UPDATED: Better batch download with progress
+  // ✅ UPDATED: Better batch download with progress (supports both images and videos)
   const handleDownloadAll = async () => {
     if (!event) return;
     
     setDownloadingAll(true);
     
     try {
-      const result = await downloadAllPhotos(
+      const result = await downloadAllMedia(
         allPosts, 
         event.title, 
         selectedPosts.size > 0 ? selectedPosts : undefined,
@@ -402,6 +500,129 @@ export default function EventDetailsPage({ params }: PageProps) {
     return [];
   };
 
+  // Analytics helper functions
+  const getAnalyticsData = () => {
+    if (!event || !event.prompts || !participants) return null;
+
+    const analytics = event.prompts.map(prompt => {
+      const responses = participants
+        .filter(p => p.promptResponses && p.promptResponses.length > 0)
+        .map(p => p.promptResponses?.find(r => r.question === prompt.question))
+        .filter(response => response && response.answer);
+
+      if (prompt.type === 'multipleChoice') {
+        // For multiple choice, count each option
+        const optionCounts: { [key: string]: number } = {};
+        const options = getOptionsArray(prompt.options);
+        
+        // Initialize counts (include "Others" if allowOthers is enabled)
+        options.forEach(option => {
+          optionCounts[option] = 0;
+        });
+        if (prompt.allowOthers && !optionCounts.hasOwnProperty('Others')) {
+          optionCounts['Others'] = 0;
+        }
+
+        // Track custom "Others" responses
+        const othersResponses: string[] = [];
+
+        // Count responses
+        responses.forEach(response => {
+          if (response?.answer) {
+            // Handle comma-separated answers for multiple choice
+            const answers = response.answer.split(', ').map(a => a.trim());
+            answers.forEach(answer => {
+              // Check if this is an "Others" response with custom text
+              if (answer.startsWith('Others: ')) {
+                if (optionCounts.hasOwnProperty('Others')) {
+                  optionCounts['Others']++;
+                  // Extract and store the custom text
+                  const customText = answer.substring(8); // Remove "Others: " prefix
+                  othersResponses.push(customText);
+                }
+              } else if (optionCounts.hasOwnProperty(answer)) {
+                optionCounts[answer]++;
+              }
+            });
+          }
+        });
+
+        return {
+          question: prompt.question,
+          type: prompt.type,
+          options: prompt.allowOthers ? [...options, 'Others'] : options,
+          data: optionCounts,
+          othersResponses: othersResponses,
+          totalResponses: responses.length,
+          responseRate: participants.length > 0 ? (responses.length / participants.length) * 100 : 0
+        };
+      } else {
+        // For text responses, just return all answers
+        return {
+          question: prompt.question,
+          type: prompt.type,
+          answers: responses.map(r => r?.answer || '').filter(a => a),
+          totalResponses: responses.length,
+          responseRate: participants.length > 0 ? (responses.length / participants.length) * 100 : 0
+        };
+      }
+    });
+
+    return analytics;
+  };
+
+  const exportAnalytics = () => {
+    if (!event || !participants) return;
+    
+    const analytics = getAnalyticsData();
+    if (!analytics) return;
+
+    // Create CSV content
+    let csvContent = `Event: ${event.title}\n`;
+    csvContent += `Date: ${new Date(event.startDate).toLocaleDateString()}\n`;
+    csvContent += `Total Participants: ${participants.length}\n\n`;
+
+    analytics.forEach((analytic, index) => {
+      csvContent += `Question ${index + 1}: ${analytic.question}\n`;
+      csvContent += `Type: ${analytic.type}\n`;
+      csvContent += `Response Rate: ${analytic.responseRate.toFixed(1)}%\n`;
+      csvContent += `Total Responses: ${analytic.totalResponses}\n\n`;
+
+      if (analytic.type === 'multipleChoice') {
+        csvContent += `Options,Count,Percentage\n`;
+        Object.entries(analytic.data).forEach(([option, count]) => {
+          const percentage = analytic.totalResponses > 0 ? (count / analytic.totalResponses) * 100 : 0;
+          csvContent += `"${option}",${count},${percentage.toFixed(1)}%\n`;
+        });
+        
+        // Add detailed "Others" responses if available
+        if (analytic.othersResponses && analytic.othersResponses.length > 0) {
+          csvContent += `\nCustom "Others" Responses:\n`;
+          analytic.othersResponses.forEach((response) => {
+            csvContent += `"${response}"\n`;
+          });
+        }
+      } else {
+        csvContent += `Responses:\n`;
+        analytic.answers.forEach((answer) => {
+          csvContent += `"${answer}"\n`;
+        });
+      }
+      csvContent += '\n';
+    });
+
+    // Download CSV
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${event.title.replace(/[^a-zA-Z0-9]/g, '_')}_analytics.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Reel Generation Functions
   const handleGenerateReel = async () => {
     if (selectedPhotosForReel.size < 3) {
@@ -419,7 +640,7 @@ export default function EventDetailsPage({ params }: PageProps) {
       
       // First, convert photo URLs to files for upload (if needed)
       // For now, we'll use the existing URLs directly
-      const photoUrls = selectedPosts.map(post => post.imageUrl);
+      const photoUrls = selectedPosts.map(post => post.imageUrl).filter((url): url is string => !!url);
 
       console.log('🎬 Starting reel generation with:', {
         photoCount: photoUrls.length,
@@ -436,7 +657,7 @@ export default function EventDetailsPage({ params }: PageProps) {
         style: reelStyle,
         duration: reelDuration,
         eventId: event?.id || '',
-        userId: 'current-user-id' // TODO: Get from auth context
+        userId: currentUser?.id || ''
       });
       
       console.log('✅ Reel generation started successfully');
@@ -446,6 +667,23 @@ export default function EventDetailsPage({ params }: PageProps) {
       setGenerationError(error instanceof Error ? error.message : 'Failed to generate reel');
     }
   };
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
+          <p style={{color: '#6B7280'}}>Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated or not an organizer, the useEffect will redirect
+  if (!currentUser) {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -636,6 +874,21 @@ export default function EventDetailsPage({ params }: PageProps) {
                 Create Reels
               </button>
               <button
+                onClick={() => setActiveTab('analytics')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'analytics'
+                    ? 'text-indigo-600'
+                    : 'border-transparent hover:text-gray-700'
+                }`}
+                style={{
+                  borderColor: activeTab === 'analytics' ? '#6C63FF' : 'transparent',
+                  color: activeTab === 'analytics' ? '#6C63FF' : '#6B7280'
+                }}
+              >
+                <BarChart3 className="h-4 w-4 mr-1 inline" />
+                Analytics
+              </button>
+              <button
                 onClick={() => setActiveTab('settings')}
                 className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === 'settings'
@@ -824,7 +1077,7 @@ export default function EventDetailsPage({ params }: PageProps) {
                   <div>
                     <h3 className="text-lg font-medium" style={{color: '#111827'}}>Event Album</h3>
                     <p className="text-sm" style={{color: '#6B7280'}}>
-                      All photos shared at this event ({allPosts.length} total)
+                      All media shared at this event ({allPosts.filter(p => p.mediaType === 'image').length} photos, {allPosts.filter(p => p.mediaType === 'video').length} videos, {allPosts.length} total)
                     </p>
                   </div>
                   
@@ -866,7 +1119,7 @@ export default function EventDetailsPage({ params }: PageProps) {
                           ) : (
                             <>
                               <DownloadCloud className="h-4 w-4 mr-2" />
-                              Download {selectedPosts.size > 0 ? `Selected (${selectedPosts.size})` : 'All'}
+                              Download {selectedPosts.size > 0 ? `Selected (${selectedPosts.size})` : 'All Media'}
                             </>
                           )}
                         </button>
@@ -892,47 +1145,77 @@ export default function EventDetailsPage({ params }: PageProps) {
                         }`}
                         onClick={() => togglePostSelection(post.id)}
                       >
-                        <img 
-                          src={post.imageUrl} 
-                          alt={post.caption || 'Event photo'}
-                          className="w-full h-48"
-                          style={{
-                            backgroundColor: '#f3f4f6', // Light gray background to see if image loads
-                            minHeight: '192px', // Ensure proper height
-                            objectFit: 'cover', // Explicit object-fit instead of class
-                            display: 'block' // Ensure proper display
-                          }}
-                          onError={(e) => {
-                            console.error('❌ Image failed to load:', {
-                              url: post.imageUrl,
-                              postId: post.id,
-                              userId: post.userId,
-                              error: e.type,
-                              timestamp: new Date().toISOString()
-                            });
-                            const target = e.target as HTMLImageElement;
-                            target.style.display = 'none';
-                            const placeholder = target.nextElementSibling as HTMLElement;
-                            if (placeholder) placeholder.style.display = 'flex';
-                          }}
-                          onLoad={(e) => {
-                            const img = e.target as HTMLImageElement;
-                            console.log('✅ Image loaded successfully:', {
-                              postId: post.id,
-                              naturalWidth: img.naturalWidth,
-                              naturalHeight: img.naturalHeight,
-                              displayWidth: img.width,
-                              displayHeight: img.height,
-                              url: post.imageUrl
-                            });
-                            
-                            // Visual test: add a colored border when image loads
-                            img.style.border = '2px solid green';
-                            setTimeout(() => {
-                              img.style.border = '';
-                            }, 2000);
-                          }}
-                        />
+                        {post.mediaType === 'video' && post.videoUrl && post.videoUrl.trim() !== '' ? (
+                          <div className="relative">
+                            <video 
+                              src={post.videoUrl}
+                              className="w-full h-48 object-cover"
+                              style={{
+                                backgroundColor: '#f3f4f6',
+                                minHeight: '192px',
+                                display: 'block'
+                              }}
+                              controls
+                              preload="metadata"
+                              muted
+                            />
+                            {/* Video indicator */}
+                            <div className="absolute top-2 right-2 p-1 bg-black bg-opacity-70 text-white rounded-full">
+                              <Play className="h-4 w-4" />
+                            </div>
+                          </div>
+                        ) : (
+                          post.imageUrl && post.imageUrl.trim() !== '' ? (
+                            <img 
+                              src={post.imageUrl} 
+                              alt={post.caption || 'Event photo'}
+                            className="w-full h-48"
+                            style={{
+                              backgroundColor: '#f3f4f6',
+                              minHeight: '192px',
+                              objectFit: 'cover',
+                              display: 'block'
+                            }}
+                            onError={(e) => {
+                              console.error('❌ Image failed to load:', {
+                                url: post.imageUrl,
+                                postId: post.id,
+                                userId: post.userId,
+                                error: e.type,
+                                timestamp: new Date().toISOString()
+                              });
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              const placeholder = target.nextElementSibling as HTMLElement;
+                              if (placeholder) placeholder.style.display = 'flex';
+                            }}
+                            onLoad={(e) => {
+                              const img = e.target as HTMLImageElement;
+                              console.log('✅ Image loaded successfully:', {
+                                postId: post.id,
+                                naturalWidth: img.naturalWidth,
+                                naturalHeight: img.naturalHeight,
+                                displayWidth: img.width,
+                                displayHeight: img.height,
+                                url: post.imageUrl
+                              });
+                              
+                              // Visual test: add a colored border when image loads
+                              img.style.border = '2px solid green';
+                              setTimeout(() => {
+                                img.style.border = '';
+                              }, 2000);
+                            }}
+                            />
+                          ) : (
+                            <div className="w-full h-48 bg-gray-200 flex items-center justify-center">
+                              <div className="text-center text-gray-500">
+                                <ImageIcon className="h-8 w-8 mx-auto mb-2" />
+                                <p className="text-xs">No image available</p>
+                              </div>
+                            </div>
+                          )
+                        )}
                         {/* Error placeholder */}
                         <div 
                           className="w-full h-48 bg-red-100 flex items-center justify-center text-red-600 border border-red-300" 
@@ -974,10 +1257,10 @@ export default function EventDetailsPage({ params }: PageProps) {
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            handleDownloadPhoto(post.imageUrl, `${event.title.replace(/[^a-zA-Z0-9]/g, '_')}-photo-${post.id}.jpg`);
+                            handleDownloadMedia(post);
                           }}
                           className="absolute top-2 right-2 p-2 bg-black bg-opacity-50 hover:bg-opacity-70 text-white rounded-full transition-all hover:scale-110"
-                          title="Download image"
+                          title={`Download ${post.mediaType}`}
                         >
                           <Download className="h-4 w-4" />
                         </button>
@@ -1009,9 +1292,10 @@ export default function EventDetailsPage({ params }: PageProps) {
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  handleDownloadPhoto(post.imageUrl, `${event.title}-photo-${post.id}.jpg`);
+                                  handleDownloadMedia(post);
                                 }}
                                 className="p-1 hover:bg-white hover:bg-opacity-20 rounded transition-colors"
+                                title={`Download ${post.mediaType}`}
                               >
                                 <Download className="h-3 w-3" />
                               </button>
@@ -1024,10 +1308,164 @@ export default function EventDetailsPage({ params }: PageProps) {
                 ) : (
                   <div className="text-center py-12">
                     <ImageIcon className="h-16 w-16 mx-auto mb-4" style={{color: '#D1D5DB'}} />
-                    <h3 className="text-lg font-semibold mb-2" style={{color: '#111827'}}>No photos yet</h3>
+                    <h3 className="text-lg font-semibold mb-2" style={{color: '#111827'}}>No media yet</h3>
                     <p style={{color: '#6B7280'}}>
-                      Photos shared by attendees will appear here. Share the event link to get started!
+                      Photos and videos shared by attendees will appear here. Share the event link to get started!
                     </p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {activeTab === 'analytics' && (
+              <div className="space-y-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-medium mb-2" style={{color: '#111827'}}>
+                      <BarChart3 className="h-5 w-5 inline mr-2" />
+                      Interaction Prompts Analytics
+                    </h3>
+                    <p className="text-sm" style={{color: '#6B7280'}}>
+                      Analyze responses from your event's interaction prompts
+                    </p>
+                  </div>
+                  <div className="flex items-center space-x-3">
+                    <button
+                      onClick={loadAnalyticsData}
+                      disabled={analyticsLoading}
+                      className="text-sm font-medium transition-colors hover:opacity-80 flex items-center"
+                      style={{color: '#6B7280'}}
+                      title="Refresh analytics"
+                    >
+                      <svg className={`h-4 w-4 mr-1 ${analyticsLoading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Refresh
+                    </button>
+                    
+                    {participants.length > 0 && (
+                      <button
+                        onClick={exportAnalytics}
+                        className="flex items-center text-white px-4 py-2 rounded-lg transition-colors hover:opacity-90"
+                        style={{backgroundColor: '#22C55E'}}
+                      >
+                        <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        Export CSV
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {analyticsLoading ? (
+                  <div className="flex items-center justify-center py-12">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-16 w-16 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
+                      <p style={{color: '#6B7280'}}>Loading analytics...</p>
+                    </div>
+                  </div>
+                ) : participants.length === 0 ? (
+                  <div className="text-center py-12">
+                    <BarChart3 className="h-16 w-16 mx-auto mb-4" style={{color: '#D1D5DB'}} />
+                    <h3 className="text-lg font-semibold mb-2" style={{color: '#111827'}}>No participants yet</h3>
+                    <p style={{color: '#6B7280'}}>
+                      Analytics will appear here once attendees join your event and answer the interaction prompts.
+                    </p>
+                  </div>
+                ) : !event.prompts || event.prompts.length === 0 ? (
+                  <div className="text-center py-12">
+                    <FileText className="h-16 w-16 mx-auto mb-4" style={{color: '#D1D5DB'}} />
+                    <h3 className="text-lg font-semibold mb-2" style={{color: '#111827'}}>No interaction prompts</h3>
+                    <p style={{color: '#6B7280'}}>
+                      Add interaction prompts to your event to collect and analyze attendee responses.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-8">
+                    {(() => {
+                      const analyticsData = getAnalyticsData();
+                      if (!analyticsData) return null;
+
+                      return analyticsData.map((analytic, index) => (
+                        <div key={index} className="bg-white border border-gray-200 rounded-lg p-6">
+                          <div className="flex items-center justify-between mb-4">
+                            <h4 className="text-md font-medium" style={{color: '#111827'}}>
+                              Question {index + 1}
+                            </h4>
+                            <div className="flex items-center space-x-4 text-sm" style={{color: '#6B7280'}}>
+                              <span>{analytic.totalResponses} responses</span>
+                              <span>{analytic.responseRate.toFixed(1)}% response rate</span>
+                            </div>
+                          </div>
+                          
+                          <p className="text-sm mb-6" style={{color: '#374151'}}>
+                            {analytic.question}
+                          </p>
+
+                          {analytic.type === 'multipleChoice' ? (
+                            <div>
+                              <h5 className="text-sm font-medium mb-3" style={{color: '#111827'}}>Response Distribution</h5>
+                              <div className="space-y-3">
+                                {Object.entries(analytic.data).map(([option, count]) => {
+                                  const percentage = analytic.totalResponses > 0 ? (count / analytic.totalResponses) * 100 : 0;
+                                  return (
+                                    <div key={option} className="flex items-center space-x-3">
+                                      <div className="w-32 text-sm truncate" style={{color: '#374151'}} title={option}>
+                                        {option}
+                                      </div>
+                                      <div className="flex-1 relative">
+                                        <div className="bg-gray-200 rounded-full h-6 overflow-hidden">
+                                          <div
+                                            className="h-full rounded-full transition-all duration-500"
+                                            style={{
+                                              width: `${percentage}%`,
+                                              backgroundColor: percentage > 0 ? '#6C63FF' : 'transparent'
+                                            }}
+                                          />
+                                        </div>
+                                        <div className="absolute inset-0 flex items-center justify-center text-xs font-medium text-white">
+                                          {count > 0 && `${count} (${percentage.toFixed(1)}%)`}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              
+                              {/* Display custom "Others" responses */}
+                              {analytic.othersResponses && analytic.othersResponses.length > 0 && (
+                                <div className="mt-6">
+                                  <h5 className="text-sm font-medium mb-3" style={{color: '#111827'}}>
+                                    Custom "Others" Responses ({analytic.othersResponses.length})
+                                  </h5>
+                                  <div className="space-y-2 max-h-40 overflow-y-auto">
+                                    {analytic.othersResponses.map((response, responseIndex) => (
+                                      <div key={responseIndex} className="p-3 bg-gray-50 rounded-lg border-l-4" style={{borderColor: '#6C63FF'}}>
+                                        <p className="text-sm" style={{color: '#374151'}}>
+                                          &ldquo;{response}&rdquo;
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <div>
+                              <h5 className="text-sm font-medium mb-3" style={{color: '#111827'}}>All Responses</h5>
+                              <div className="space-y-2 max-h-60 overflow-y-auto">
+                                {analytic.answers.map((answer, answerIndex) => (
+                                  <div key={answerIndex} className="p-3 bg-gray-50 rounded-lg">
+                                    <p className="text-sm" style={{color: '#374151'}}>
+                                      &ldquo;{answer}&rdquo;
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ));
+                    })()}
                   </div>
                 )}
               </div>
@@ -1162,11 +1600,34 @@ export default function EventDetailsPage({ params }: PageProps) {
                             setSelectedPhotosForReel(newSelection);
                           }}
                         >
-                          <img 
-                            src={post.imageUrl} 
-                            alt={post.caption || 'Event photo'}
-                            className="w-full h-32 object-cover"
-                          />
+                          {post.mediaType === 'video' && post.videoUrl && post.videoUrl.trim() !== '' ? (
+                            <div className="relative">
+                              <video 
+                                src={post.videoUrl}
+                                className="w-full h-32 object-cover"
+                                preload="metadata"
+                                muted
+                              />
+                              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
+                                <Play className="h-6 w-6 text-white" />
+                              </div>
+                            </div>
+                          ) : (
+                            post.imageUrl && post.imageUrl.trim() !== '' ? (
+                              <img 
+                                src={post.imageUrl} 
+                                alt={post.caption || 'Event photo'}
+                                className="w-full h-32 object-cover"
+                              />
+                            ) : (
+                              <div className="w-full h-32 bg-gray-200 flex items-center justify-center">
+                                <div className="text-center text-gray-500">
+                                  <ImageIcon className="h-4 w-4 mx-auto mb-1" />
+                                  <p className="text-xs">No image</p>
+                                </div>
+                              </div>
+                            )
+                          )}
                           
                           {/* Selection indicator */}
                           <div className={`absolute top-2 left-2 w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${
@@ -1379,12 +1840,21 @@ export default function EventDetailsPage({ params }: PageProps) {
                       </div>
                     </div>
                     
-                    <video 
-                      src={generatedReelUrl || currentTask?.videoUrl}
-                      controls
-                      className="w-full max-w-sm rounded-lg mb-4"
-                      style={{backgroundColor: '#000'}}
-                    />
+                    {(generatedReelUrl || currentTask?.videoUrl) && (generatedReelUrl || currentTask?.videoUrl)?.trim() !== '' ? (
+                      <video 
+                        src={generatedReelUrl || currentTask?.videoUrl}
+                        controls
+                        className="w-full max-w-sm rounded-lg mb-4"
+                        style={{backgroundColor: '#000'}}
+                      />
+                    ) : (
+                      <div className="w-full max-w-sm h-48 bg-gray-200 flex items-center justify-center rounded-lg mb-4">
+                        <div className="text-center text-gray-500">
+                          <Video className="h-8 w-8 mx-auto mb-2" />
+                          <p className="text-sm">No video available</p>
+                        </div>
+                      </div>
+                    )}
                     
                     <div className="flex flex-wrap gap-3">
                       <button 

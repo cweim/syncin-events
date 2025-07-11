@@ -246,6 +246,8 @@ export default function EventFeedPage({ params }: PageProps) {
             participantId: data.participantId || '',
             userId: data.userId || '',
             imageUrl: data.imageUrl || '',
+            videoUrl: data.videoUrl || '',
+            mediaType: data.mediaType || 'image',
             caption: data.caption || '',
             tags: Array.isArray(data.tags) ? data.tags : [],
             createdAt: toDateSafe(data.createdAt),
@@ -510,7 +512,7 @@ export default function EventFeedPage({ params }: PageProps) {
           >
             <div className="w-9 h-9 rounded-full flex items-center justify-center mr-3" style={{backgroundColor: '#EDE9FE'}}>
               {/* ✅ Profile photo with fallback to initials */}
-              {post.authorProfilePicUrl ? (
+              {post.authorProfilePicUrl && post.authorProfilePicUrl.trim() !== '' ? (
                 <img 
                   src={post.authorProfilePicUrl}
                   alt="Profile"
@@ -535,18 +537,44 @@ export default function EventFeedPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Post Image */}
+        {/* Post Media */}
         <div className="relative">
-          <img 
-            src={post.imageUrl} 
-            alt={post.caption || 'Event photo'}
-            className="w-full aspect-square object-cover"
-            style={{backgroundColor: '#F3F4F6'}}
-          />
+          {post.mediaType === 'video' && post.videoUrl && post.videoUrl.trim() !== '' ? (
+            <video 
+              src={post.videoUrl} 
+              className="w-full aspect-video object-cover"
+              style={{backgroundColor: '#F3F4F6'}}
+              controls
+              preload="metadata"
+              muted
+            />
+          ) : (
+            post.imageUrl && post.imageUrl.trim() !== '' ? (
+              <img 
+                src={post.imageUrl} 
+                alt={post.caption || 'Event photo'}
+                className="w-full aspect-square object-cover"
+                style={{backgroundColor: '#F3F4F6'}}
+              />
+            ) : (
+              <div className="w-full aspect-square bg-gray-200 flex items-center justify-center">
+                <div className="text-center text-gray-500">
+                  <div className="text-4xl mb-2">📷</div>
+                  <p className="text-sm">No image available</p>
+                </div>
+              </div>
+            )
+          )}
           
           {/* Download button overlay */}
           <button
-            onClick={() => handleDownloadPhoto(post.imageUrl, `${event.title}-photo-${post.id}.jpg`)}
+            onClick={() => {
+              if (post.mediaType === 'video' && post.videoUrl) {
+                handleDownloadPhoto(post.videoUrl, `${event?.title || 'event'}-video-${post.id}.mp4`);
+              } else if (post.imageUrl) {
+                handleDownloadPhoto(post.imageUrl, `${event?.title || 'event'}-photo-${post.id}.jpg`);
+              }
+            }}
             className="absolute top-4 right-4 p-2 bg-black/50 hover:bg-black/70 rounded-full transition-colors"
           >
             <Download className="h-4 w-4 text-white" />
@@ -617,7 +645,7 @@ export default function EventFeedPage({ params }: PageProps) {
                         className="w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0"
                         style={{backgroundColor: '#EDE9FE'}}
                       >
-                        {comment.authorProfilePicUrl ? (
+                        {comment.authorProfilePicUrl && comment.authorProfilePicUrl.trim() !== '' ? (
                           <img 
                             src={comment.authorProfilePicUrl}
                             alt="Profile"

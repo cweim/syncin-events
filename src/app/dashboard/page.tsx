@@ -8,9 +8,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Camera, Plus, Calendar, MapPin, Users, QrCode, Upload, X, ExternalLink } from 'lucide-react';
 import { createEvent, generateUniqueEventUrl, getUserEvents } from '@/lib/database';
+import { getCurrentFirebaseUser, getCurrentUser } from '@/lib/auth';
+import { getUser } from '@/lib/database';
 import { storage } from '@/lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { CreateEventData, Event } from '@/types';
+import { CreateEventData, Event, User } from '@/types';
 
 interface EventFormData {
   title: string;
@@ -25,6 +27,7 @@ interface EventFormData {
     type: 'text' | 'multipleChoice'; 
     required: boolean; 
     options?: string[];
+    allowOthers?: boolean;
   }>;
 }
 
@@ -34,6 +37,8 @@ export default function DashboardPage() {
   const [isCreating, setIsCreating] = useState(false);
   const [userEvents, setUserEvents] = useState<Event[]>([]);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   
   const [formData, setFormData] = useState<EventFormData>({
     title: '',
@@ -48,6 +53,43 @@ export default function DashboardPage() {
       { question: "What brings you to this event?", type: 'text', required: false }
     ]
   });
+
+  // Authentication check
+  useEffect(() => {
+    const checkAuth = async () => {
+      try {
+        const firebaseUser = getCurrentFirebaseUser();
+        if (!firebaseUser) {
+          // Not authenticated, redirect to admin login
+          router.push('/admin/login');
+          return;
+        }
+
+        const user = await getUser(firebaseUser.uid);
+        if (!user) {
+          // User data not found, redirect to admin login
+          router.push('/admin/login');
+          return;
+        }
+
+        // Check if user is an organizer
+        if (user.role !== 'organizer') {
+          // Attendees should not access dashboard, redirect to home
+          router.push('/');
+          return;
+        }
+
+        setCurrentUser(user);
+      } catch (error) {
+        console.error('Auth check error:', error);
+        router.push('/admin/login');
+      } finally {
+        setAuthLoading(false);
+      }
+    };
+
+    checkAuth();
+  }, [router]);
   
   const [coverPhotoPreview, setCoverPhotoPreview] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -68,10 +110,11 @@ export default function DashboardPage() {
   // Load user's events
   useEffect(() => {
     const loadUserEvents = async () => {
+      if (!currentUser) return;
+      
       try {
         setLoadingEvents(true);
-        // TODO: Replace with actual auth user ID
-        const events = await getUserEvents('temp-user-id');
+        const events = await getUserEvents(currentUser.id);
         console.log('📋 Loaded user events:', events);
         setUserEvents(events);
       } catch (error) {
@@ -82,11 +125,13 @@ export default function DashboardPage() {
     };
 
     loadUserEvents();
-  }, []);
+  }, [currentUser]);
 
   const refreshEvents = async () => {
+    if (!currentUser) return;
+    
     try {
-      const events = await getUserEvents('temp-user-id');
+      const events = await getUserEvents(currentUser.id);
       setUserEvents(events);
     } catch (error) {
       console.error('Error refreshing events:', error);
@@ -239,7 +284,8 @@ export default function DashboardPage() {
               type: newType,
               options: newType === 'multipleChoice' ? 
                 (Array.isArray(prompt.options) && prompt.options.length > 0 ? prompt.options : ['Option 1', 'Option 2']) : 
-                undefined
+                undefined,
+              allowOthers: newType === 'multipleChoice' ? (prompt.allowOthers || false) : undefined
             }
           : prompt
       )
@@ -380,6 +426,8 @@ export default function DashboardPage() {
                 processedPrompt.options = filteredOptions;
               }
             }
+            // Include allowOthers property for multiple choice questions
+            processedPrompt.allowOthers = prompt.allowOthers || false;
           }
           
           return processedPrompt;
@@ -387,7 +435,7 @@ export default function DashboardPage() {
 
       // Create event data
       const eventData: CreateEventData = {
-        organizerId: 'temp-user-id', // TODO: Replace with actual auth user ID
+        organizerId: currentUser!.id,
         title: formData.title,
         description: formData.description,
         location: formData.location,
@@ -459,6 +507,23 @@ export default function DashboardPage() {
       setIsSubmitting(false);
     }
   };
+
+  // Show loading while checking authentication
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center" style={{backgroundColor: '#F9FAFB'}}>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 mx-auto mb-4" style={{borderColor: '#6C63FF'}}></div>
+          <p style={{color: '#6B7280'}}>Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If not authenticated or not an organizer, the useEffect will redirect
+  if (!currentUser) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen" style={{backgroundColor: '#F9FAFB'}}>
@@ -1057,6 +1122,24 @@ export default function DashboardPage() {
                             <Plus className="w-4 h-4 mr-1" />
                             Add option
                           </button>
+                        </div>
+                        
+                        {/* Allow Others Checkbox */}
+                        <div className="mt-4 pt-4 border-t border-gray-200">
+                          <label className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={prompt.allowOthers || false}
+                              onChange={(e) => handlePromptChange(index, 'allowOthers', e.target.checked)}
+                              className="w-4 h-4 text-indigo-600 bg-gray-100 border-gray-300 rounded focus:ring-indigo-500 focus:ring-2"
+                            />
+                            <span className="text-sm font-medium" style={{color: '#111827'}}>
+                              Allow "Others" option
+                            </span>
+                          </label>
+                          <p className="text-xs mt-1 ml-6" style={{color: '#6B7280'}}>
+                            Attendees can select "Others" and provide their own custom answer
+                          </p>
                         </div>
                       </div>
                     )}
