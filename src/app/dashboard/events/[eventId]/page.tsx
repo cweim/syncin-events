@@ -1147,20 +1147,77 @@ export default function EventDetailsPage({ params }: PageProps) {
                       >
                         {post.mediaType === 'video' && post.videoUrl && post.videoUrl.trim() !== '' ? (
                           <div className="relative">
+                            {/* Video placeholder with loading indicator */}
+                            <div className="w-full h-48 bg-gray-900 flex items-center justify-center">
+                              <div className="text-center text-white">
+                                <div className="relative">
+                                  <Video className="h-12 w-12 mx-auto mb-3 opacity-60" />
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="w-8 h-8 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                  </div>
+                                </div>
+                                <p className="text-sm opacity-80">Loading video...</p>
+                                <p className="text-xs opacity-60 mt-1">Click to play</p>
+                              </div>
+                            </div>
+                            
                             <video 
                               src={post.videoUrl}
-                              className="w-full h-48 object-cover"
+                              className="absolute inset-0 w-full h-48 object-cover opacity-0 transition-opacity duration-300"
                               style={{
                                 backgroundColor: '#f3f4f6',
                                 minHeight: '192px',
                                 display: 'block'
                               }}
                               controls
-                              preload="metadata"
+                              preload="none"
                               muted
+                              poster=""
+                              onError={(e) => {
+                                console.error('❌ Video failed to load:', {
+                                  url: post.videoUrl,
+                                  postId: post.id,
+                                  userId: post.userId,
+                                  error: e.type,
+                                  timestamp: new Date().toISOString()
+                                });
+                                const target = e.target as HTMLVideoElement;
+                                const container = target.parentElement;
+                                if (container) {
+                                  container.innerHTML = `
+                                    <div class="w-full h-48 bg-red-100 flex items-center justify-center text-red-600 border border-red-300">
+                                      <div class="text-center">
+                                        <div class="text-2xl mb-2">⚠️</div>
+                                        <p class="text-xs font-medium">Video failed to load</p>
+                                        <p class="text-xs opacity-75 mt-1">Check network connection</p>
+                                      </div>
+                                    </div>
+                                  `;
+                                }
+                              }}
+                              onLoadStart={() => {
+                                console.log('🎥 Video loading started:', {
+                                  postId: post.id,
+                                  url: post.videoUrl
+                                });
+                              }}
+                              onLoadedData={(e) => {
+                                console.log('✅ Video loaded successfully:', {
+                                  postId: post.id,
+                                  url: post.videoUrl
+                                });
+                                const target = e.target as HTMLVideoElement;
+                                target.style.opacity = '1';
+                              }}
+                              onCanPlay={(e) => {
+                                console.log('🎬 Video can play:', post.id);
+                                const target = e.target as HTMLVideoElement;
+                                target.style.opacity = '1';
+                              }}
                             />
+                            
                             {/* Video indicator */}
-                            <div className="absolute top-2 right-2 p-1 bg-black bg-opacity-70 text-white rounded-full">
+                            <div className="absolute top-2 right-2 p-1 bg-black bg-opacity-70 text-white rounded-full z-10">
                               <Play className="h-4 w-4" />
                             </div>
                           </div>
@@ -1605,8 +1662,26 @@ export default function EventDetailsPage({ params }: PageProps) {
                               <video 
                                 src={post.videoUrl}
                                 className="w-full h-32 object-cover"
-                                preload="metadata"
+                                preload="none"
                                 muted
+                                poster=""
+                                onError={(e) => {
+                                  console.error('❌ Video thumbnail failed to load:', {
+                                    url: post.videoUrl,
+                                    postId: post.id,
+                                    error: e.type,
+                                    timestamp: new Date().toISOString()
+                                  });
+                                }}
+                                onLoadStart={() => {
+                                  console.log('🎥 Video thumbnail loading:', post.id);
+                                }}
+                                onLoadedData={() => {
+                                  console.log('✅ Video thumbnail loaded:', post.id);
+                                }}
+                                onCanPlay={() => {
+                                  console.log('🎬 Video thumbnail can play:', post.id);
+                                }}
                               />
                               <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-30">
                                 <Play className="h-6 w-6 text-white" />
