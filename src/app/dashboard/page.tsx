@@ -58,30 +58,41 @@ export default function DashboardPage() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
+        console.log('🔍 Dashboard: Starting auth check...');
         const firebaseUser = getCurrentFirebaseUser();
+        console.log('🔍 Dashboard: Firebase user:', firebaseUser ? { uid: firebaseUser.uid, email: firebaseUser.email } : 'null');
+        
         if (!firebaseUser) {
           // Not authenticated, redirect to admin login
+          console.log('❌ Dashboard: No Firebase user, redirecting to admin login');
           router.push('/admin/login');
           return;
         }
 
         const user = await getUser(firebaseUser.uid);
+        console.log('🔍 Dashboard: User data from database:', user);
+        
         if (!user) {
           // User data not found, redirect to admin login
+          console.log('❌ Dashboard: No user data found, redirecting to admin login');
           router.push('/admin/login');
           return;
         }
 
+        console.log('🔍 Dashboard: User role:', user.role);
+        
         // Check if user is an organizer
         if (user.role !== 'organizer') {
           // Attendees should not access dashboard, redirect to home
+          console.log('❌ Dashboard: User is not organizer, redirecting to home. Role:', user.role);
           router.push('/');
           return;
         }
 
+        console.log('✅ Dashboard: Auth check passed! Setting current user');
         setCurrentUser(user);
       } catch (error) {
-        console.error('Auth check error:', error);
+        console.error('❌ Dashboard: Auth check error:', error);
         router.push('/admin/login');
       } finally {
         setAuthLoading(false);
