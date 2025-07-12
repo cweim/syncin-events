@@ -17,6 +17,12 @@ export default function HomePage() {
             </div>
             <div className="flex items-center space-x-6">
               <Link
+                href="/about"
+                className="text-gray-600 hover:text-gray-900 font-medium"
+              >
+                About
+              </Link>
+              <Link
                 href="/pricing"
                 className="text-gray-600 hover:text-gray-900 font-medium"
               >
@@ -172,6 +178,9 @@ export default function HomePage() {
               The social camera for events. No app needed.
             </p>
             <div className="flex justify-center space-x-6 text-sm">
+              <Link href="/about" className="hover:text-white transition-colors">
+                About
+              </Link>
               <Link href="/pricing" className="hover:text-white transition-colors">
                 Pricing
               </Link>
