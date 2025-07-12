@@ -42,10 +42,12 @@ export default function AdminLoginPage() {
       }
 
       if (formData.email !== adminEmail || formData.password !== adminPassword) {
+        console.log('Credential mismatch detected');
         setError('Invalid admin credentials.');
         return;
       }
 
+      console.log('Credentials match! Redirecting to dashboard...');
       router.push('/dashboard');
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to sign in';
