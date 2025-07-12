@@ -3,7 +3,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Camera, Mail, Eye, EyeOff, Settings, ArrowLeft } from 'lucide-react';
@@ -32,6 +32,9 @@ export default function AdminLoginPage() {
       // Check against hardcoded admin credentials
       const adminEmail = process.env.NEXT_PUBLIC_ADMIN_EMAIL;
       const adminPassword = process.env.NEXT_PUBLIC_ADMIN_PASSWORD;
+
+      console.log('Admin credentials:', { adminEmail, adminPassword });
+      console.log('Form data:', formData);
 
       if (!adminEmail || !adminPassword) {
         setError('Admin credentials not configured. Please contact system administrator.');
